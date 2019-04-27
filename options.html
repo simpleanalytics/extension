@@ -1,0 +1,166 @@
+<html>
+  <style>
+    body, html {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+    }
+    body {
+      background: #EEF9FF;
+      word-break: break-word;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      flex-direction: column;
+    }
+    * {
+      box-sizing: border-box;
+    }
+    h1, h2, h3, h4 {
+      font-family: Arial, sans-serif;
+      color: #415659;
+      margin: 2rem 0 1rem 0;
+      line-height: 1.5;
+      /* font-weight: lighter; */
+    }
+    h1 + p, h2 + p {
+      margin-top: -0.5rem;
+    }
+    p, button, .button, label, input[type="email"], input[type="text"], li, td, th {
+      font-family: Arial, sans-serif;
+      font-size: 15px;
+      line-height: 170%;
+      color: #3e3e3e;
+    }
+    p strong, li strong {
+      color: #415659;
+    }
+    a {
+      color: #00C5E5;
+    }
+    /* Logo */
+    svg {
+      width: 100px;
+      height: 100px;
+      fill: #FF4F64;
+      margin-bottom: -2rem;
+    }
+
+    /* Layouts */
+    main {
+      padding-bottom: 2rem;
+      flex: 0 0 auto;
+      max-width: 500px;
+      background: white;
+      border-radius: 20px;
+      padding: 2rem;
+    }
+    main > :first-child {
+      margin-top: 0;
+    }
+    main > :last-child {
+      margin-bottom: 0;
+    }
+    @media (max-width: 600px) {
+      main {
+        padding-top: 1.5rem;
+      }
+    }
+
+    /* Customize the label (the container) */
+    .checkbox {
+      display: inline-block;
+      position: relative;
+      padding-left: 26px;
+      margin-bottom: 12px;
+      cursor: pointer;
+      user-select: none;
+      word-wrap: anywhere;
+    }
+
+    /* Hide the browser's default checkbox */
+    .checkbox input[type="checkbox"] {
+      position: absolute;
+      opacity: 0;
+      cursor: pointer;
+    }
+
+    /* Create a custom checkbox */
+    .checkmark {
+      position: absolute;
+      top: 5px;
+      left: 0;
+      height: 18px;
+      width: 18px;
+      border-radius: 3px;
+      border: 1px solid #9AA7B4;
+    }
+
+    /* On mouse-over, add a grey background color */
+    .checkbox:hover input ~ .checkmark {
+      border-color: #FF4F64;
+    }
+
+    /* When the checkbox is checked, add a blue background */
+    .checkbox input:checked ~ .checkmark {
+      background-color: #FF4F64;
+      border-color: #FF4F64;
+    }
+
+    /* Create the checkmark/indicator (hidden when not checked) */
+    .checkmark:after {
+      content: "";
+      position: absolute;
+      display: none;
+    }
+
+    /* Show the checkmark when checked */
+    .checkbox input:checked ~ .checkmark:after {
+      display: block;
+    }
+
+    /* Style the checkmark/indicator */
+    .checkbox .checkmark:after {
+      left: 6px;
+      top: 1px;
+      width: 3px;
+      height: 10px;
+      border: solid white;
+      border-width: 0 2px 2px 0;
+      transform: rotate(45deg);
+    }
+
+    ul {
+      display: inline-block;
+      text-align: left;
+      list-style-type: none;
+      margin: 0 0 0 0;
+      padding: 0;
+    }
+  </style>
+</html>
+<body>
+
+    <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.0" x="0px" y="0px" viewBox="0 0 100 100" enable-background="new 0 0 100 100" xml:space="preserve">
+      <rect x="20" y="53" width="10" height="30"></rect>
+      <rect x="44" y="35" width="10" height="48"></rect>
+      <rect x="68" y="18" width="10" height="65"></rect>
+    </svg>
+      <h1>Simple Analytics Extension</h1>
+  <main>
+      <p>Awesome you're using our extension. We made it as simple as possible to block your own requests. Click the Simple Analytics extension icon to disable your visits on your websites. If the icon is gray it will not record your visits and shows the amount of requests blocked in that tab.</p>
+
+      <h2>Websites where you are invisible</h2>
+      <p>Behind the websites you also see the amount of visits it blocked.</p>
+      <ul class="websites"></ul>
+
+      <div data-js="scripts" style="display: none;">
+        <h2>Extra scripts being blocked</h2>
+        <p>Remove them if you don't recognise them</p>
+        <ul class="scripts"></ul>
+      </div>
+  </main>
+
+  <script src="options.js"></script>
+</body>
+</html>
