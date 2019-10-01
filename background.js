@@ -11,11 +11,27 @@ let scripts = [
 ]
 let tabs = {}
 
-const blockRequests = function(details) {
+const safeAlert = (message) => {
+  // We need to run it in executeScript because Firefox does not show the alrt otherwise
+  chrome.tabs.executeScript({
+    code: `alert('Simple Analytics: ${message.replace(/[^a-zA-Z0-9 ]+/g, '')}')`
+  })
+}
 
-  const { initiator, tabId } = details
+const warn = (message) => {
+  // We need to run it in executeScript because Firefox does not show the warning otherwise
+  chrome.tabs.executeScript({
+    code: `console.warn('Simple Analytics: ${message.replace(/[^a-zA-Z0-9 ]+/g, '')}')`
+  })
+}
+
+const blockRequests = function(details) {
+  const { tabId } = details
+  const initiator = details.initiator || details.url
   const basename = initiator ? getUrlBase(initiator) : null
   const found = blacklist.length && blacklist.find(({ hostname, enabled }) => hostname === basename && enabled)
+
+  console.log('==> blockRequests', initiator, tabId, basename, found, details)
 
   if (found) {
     found.timesBlocked++
@@ -50,6 +66,7 @@ function createSetIconAction(path, callback) {
 }
 
 const updateDeclarativeContent = () => {
+  if (!chrome.declarativeContent) return warn('Because declarativeContent is not supported we can\'t update the app icon')
   chrome.storage.local.get(['blacklist'], ({ blacklist }) => {
     if (!blacklist || !blacklist.length) return
     chrome.declarativeContent.onPageChanged.removeRules(undefined, function() {
@@ -80,7 +97,6 @@ const showErrors = error => {
 
 chrome.webRequest.onErrorOccurred.removeListener(showErrors)
 
-
 // Load data when loading the app after browser reboot
 chrome.storage.local.get(['blacklist'], ({ blacklist: blacklistLocal }) => {
   if (blacklistLocal) blacklist = blacklistLocal
@@ -92,6 +108,8 @@ chrome.storage.local.get(['scripts'], ({ scripts: scriptsLocal }) => {
 
 // Act on store changes to save it to internal variables
 chrome.storage.onChanged.addListener(({ blacklist: storageBlacklist, scripts: storageScripts }, areaName) => {
+  console.log('==> storage.onChanged', areaName, storageBlacklist, storageScripts)
+
   if (areaName !== 'local') return
 
   if (storageScripts) {
@@ -134,15 +152,25 @@ const getFileUrl = url => {
   return origin + pathname
 }
 
-const requestPermissionForUrl = (basenames, isSimpleAnalytics) => {
+let waitingPermissions = {}
+
+const requestPermissionForUrl = (basename, basenames) => new Promise((resolve) => {
   const websites = basenames.filter(({ type }) => type === 'website').map(({ name }) => `*://*.${name}/*`)
   const scripts2 = basenames.filter(({ type }) => type === 'script').map(({ name }) => name)
 
   chrome.permissions.request({
     origins: [...websites]
   }, function(granted) {
+    if (chrome.runtime.lastError) {
+      if (chrome.runtime.lastError.message === 'permissions.request may only be called from a user input handler') {
+        waitingPermissions[basename] = basenames
+        safeAlert(`Click again`)
+      } else {
+        safeAlert(chrome.runtime.lastError.message)
+      }
+      return console.error(chrome.runtime.lastError.message)
+    }
     if (!granted) return alert(`Oops, no permission to skip your visits on ${basenames.map(({ name }) => name).join(', ')}`)
-    if (chrome.runtime.lastError) return console.log(chrome.runtime.lastError.message)
 
     const addWebsites = []
     for (const { name } of basenames.filter(({ type }) => type === 'website')) {
@@ -151,35 +179,42 @@ const requestPermissionForUrl = (basenames, isSimpleAnalytics) => {
     }
     if (addWebsites.length) chrome.storage.local.set({ blacklist: [...blacklist, ...addWebsites ] })
 
-    // if (scripts2.lenght === 0) return
-
-    // if (!isSimpleAnalytics) alert('Will block the following scripts:\n- ' + scripts2.join('\n- ') + '\n\nYou can change this in the extension options')
     chrome.storage.local.set({ scripts: [ ...new Set([ ...scripts, ...scripts2 ]) ] })
   })
-}
+})
 
-chrome.browserAction.onClicked.addListener(function(tab) {
-  const basename = getUrlBase(tab.url)
-  if (!basename) return alert('Invalid website')
-
+const checkForScripts = (basename) => new Promise((resolve, reject) => {
   chrome.tabs.executeScript({
     code: `(document.scripts ? [...document.scripts] : []).map(({src}) => src).filter(item => item && (item.indexOf('${basename}') > -1 || item.indexOf('.simpleanalytics.') > -1))`
-  }, function([ scripts2 ] = []) {
-    if (chrome.runtime.lastError) return console.log(chrome.runtime.lastError.message)
+  }, function([ scripts ] = []) {
+    if (chrome.runtime.lastError) return reject(chrome.runtime.lastError.message)
 
-    const usesSimpleAnalytics = (scripts2 || []).find(item => item.indexOf('.simpleanalytics.') > -1)
-    if (usesSimpleAnalytics) return requestPermissionForUrl([{ name: basename, type: 'website' }], true)
+    const usesSimpleAnalytics = (scripts || []).find(item => item.indexOf('.simpleanalytics.') > -1)
+    if (usesSimpleAnalytics) return resolve([{ name: basename, type: 'website' }])
 
-    // Skip google, jquery, .min, ...
-    const cleanScripts = (scripts2 || []).filter(item => /\/app\.js$/i.test(item))
+    // Add app.js, events.js and a.js
+    const cleanScripts = (scripts || []).filter(item => /\/(app|events|e)\.js$/i.test(item))
 
     // Add to URLS
     if (cleanScripts.length > 0) {
-      requestPermissionForUrl([{ name: basename, type: 'website' }, ...cleanScripts.map(script => ({ name: getFileUrl(script), type: 'script' })) ])
+      resolve([{ name: basename, type: 'website' }, ...cleanScripts.map(script => ({ name: getFileUrl(script), type: 'script' })) ])
     } else {
-      requestPermissionForUrl([{ name: basename, type: 'website' }], true)
+      resolve([{ name: basename, type: 'website' }])
     }
   })
+})
+
+chrome.browserAction.onClicked.addListener(function(tab) {
+  const basename = getUrlBase(tab.url)
+
+  if (!basename) return safeAlert('Invalid website')
+
+  // Fix to prevent the Firefox error "permissions.request may only be called from a user input handler"
+  if (waitingPermissions && waitingPermissions[basename] && waitingPermissions[basename].length) return requestPermissionForUrl(basename, waitingPermissions[basename])
+
+  return checkForScripts(basename).then(scripts => {
+    requestPermissionForUrl(basename, scripts).then(console.log)
+  }).catch(console.error)
 })
 
 chrome.webRequest.onBeforeRequest.addListener(blockRequests, { urls: scripts, types: ['xmlhttprequest', 'script'] }, ['blocking'] )
