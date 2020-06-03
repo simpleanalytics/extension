@@ -1,6 +1,5 @@
 {
   "name": "Simple Analytics",
-  "version": "1.1",
   "description": "Block your own requests so they don't count towards your stats in Simple Analytics",
   "manifest_version": 2,
   "options_ui": {
