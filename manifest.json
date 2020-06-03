@@ -1,9 +1,13 @@
 {
   "name": "Simple Analytics",
-  "version": "1.0",
+  "version": "1.1",
   "description": "Block your own requests so they don't count towards your stats in Simple Analytics",
   "manifest_version": 2,
-  "options_page": "options.html",
+  "options_ui": {
+    "page": "options.html",
+    "chrome_style": true,
+    "browser_style": true
+  },
   "background": {
     "scripts": ["background.js"],
     "persistent": true
@@ -14,16 +18,14 @@
   "browser_action": {
     "default_title": "Simple Analytics"
   },
-  "optional_permissions": [ "<all_urls>" ],
+  "optional_permissions": ["<all_urls>"],
   "permissions": [
     "*://*.simpleanalytics.io/*",
     "*://*.simpleanalytics.com/*",
-    "*://*.simpleanalytics.is/*",
-    "*://*.simpleanalyticscdn.is/*",
     "*://*.simpleanalyticscdn.com/*",
     "webRequest",
     "webRequestBlocking",
-    "declarativeContent",
+    // "declarativeContent",
     "notifications",
     "storage",
     "activeTab"
