@@ -13,6 +13,11 @@
       align-items: center;
       flex-direction: column;
     }
+    @supports (-moz-appearance:none) {
+      body {
+        background: white;
+      }
+    }
     * {
       box-sizing: border-box;
     }
@@ -21,10 +26,19 @@
       color: #415659;
       margin: 2rem 0 1rem 0;
       line-height: 1.5;
-      /* font-weight: lighter; */
     }
     h1 + p, h2 + p {
       margin-top: -0.5rem;
+    }
+
+    @supports (-moz-appearance: none) {
+      h1, h2, h3, h4  {
+        font-family: inherit;
+        text-align: left;
+      }
+      h1  {
+        display: none;
+      }
     }
     p, button, .button, label, input[type="email"], input[type="text"], li, td, th {
       font-family: Arial, sans-serif;
@@ -38,12 +52,18 @@
     a {
       color: #00C5E5;
     }
+
     /* Logo */
     svg {
       width: 100px;
       height: 100px;
       fill: #FF4F64;
       margin-bottom: -2rem;
+    }
+    @supports (-moz-appearance: none) {
+      svg {
+        display: none;
+      }
     }
 
     /* Layouts */
@@ -54,6 +74,12 @@
       background: white;
       border-radius: 20px;
       padding: 2rem;
+    }
+    @supports (-moz-appearance: none) {
+      main {
+        max-width: unset;
+        padding: 0;
+      }
     }
     main > :first-child {
       margin-top: 0;
