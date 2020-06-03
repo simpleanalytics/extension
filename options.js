@@ -1,4 +1,5 @@
 let blacklist = [];
+const IS_FIREFOX = navigator.userAgent.includes("Firefox");
 
 chrome.storage.local.get(["blacklist"], ({ blacklist: blacklistLocal }) => {
   if (blacklistLocal) blacklist = blacklistLocal;
@@ -82,3 +83,9 @@ chrome.storage.local.get(["scripts"], ({ scripts: scriptsLocal }) => {
       });
   });
 });
+
+if (IS_FIREFOX) {
+  document.querySelectorAll("[data-extension-text]").forEach((textElement) => {
+    textElement.textContent = "add-on";
+  });
+}
