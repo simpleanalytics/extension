@@ -15,7 +15,7 @@ const safeAlert = (message) => {
   // We need to run it in executeScript because Firefox does not show the alrt otherwise
   chrome.tabs.executeScript({
     code: `alert('Simple Analytics: ${message.replace(
-      /[^a-zA-Z0-9 ]+/g,
+      /[^a-zA-Z0-9 .]+/g,
       ""
     )}')`,
   });
@@ -25,7 +25,7 @@ const warn = (message) => {
   // We need to run it in executeScript because Firefox does not show the warning otherwise
   chrome.tabs.executeScript({
     code: `console.warn('Simple Analytics: ${message.replace(
-      /[^a-zA-Z0-9 ]+/g,
+      /[^a-zA-Z0-9 .]+/g,
       ""
     )}')`,
   });
@@ -88,7 +88,7 @@ function createSetIconAction(path, callback) {
 const updateDeclarativeContent = () => {
   if (!chrome.declarativeContent)
     return warn(
-      "Because declarativeContent is not supported we can't update the app icon"
+      "Because declarativeContent is not supported we can not update the app icon"
     );
   chrome.storage.local.get(["blacklist"], ({ blacklist }) => {
     if (!blacklist || !blacklist.length) return;
@@ -297,6 +297,13 @@ chrome.browserAction.onClicked.addListener(function (tab) {
   const basename = getUrlBase(tab.url);
 
   if (!basename) return safeAlert("Invalid website");
+
+  // Prevent blocking simpleanalytics.com to not break the dashboard
+  if (basename.endsWith("simpleanalytics.com")) {
+    return safeAlert(
+      "You can not block simpleanalytics.com because it will break the charts."
+    );
+  }
 
   // Fix to prevent the Firefox error "permissions.request may only be called from a user input handler"
   if (
