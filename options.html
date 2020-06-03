@@ -1,44 +1,55 @@
 <html>
   <style>
+    :root {
+      --background-color: #EEF9FF;
+      --font-family: Arial, sans-serif;
+      --heading-text-align: center;
+      --heading-display: block;
+      --logo-display: block;
+      --main-max-width: 500px;
+      --main-padding: 2rem;
+      --declarative-content-display: unset;
+    }
+    @supports (-moz-appearance: none) {
+      :root {
+        --background-color: transparent;
+        --font-family: inherit;
+        --heading-text-align: left;
+        --heading-display: none;
+        --logo-display: none;
+        --main-max-width: unset;
+        --main-padding: 0;
+        --declarative-content-display: none;
+      }
+    }
     body, html {
       margin: 0;
       padding: 0;
       height: 100%;
     }
     body {
-      background: #EEF9FF;
+      background: var(--background-color);
       word-break: break-word;
       display: flex;
       justify-content: center;
       align-items: center;
       flex-direction: column;
     }
-    @supports (-moz-appearance:none) {
-      body {
-        background: white;
-      }
-    }
     * {
       box-sizing: border-box;
     }
     h1, h2, h3, h4 {
-      font-family: Arial, sans-serif;
+      font-family: var(--font-family);
       color: #415659;
       margin: 2rem 0 1rem 0;
       line-height: 1.5;
+      text-align: var(--heading-text-align);
     }
     h1 + p, h2 + p {
       margin-top: -0.5rem;
     }
-
-    @supports (-moz-appearance: none) {
-      h1, h2, h3, h4  {
-        font-family: inherit;
-        text-align: left;
-      }
-      h1  {
-        display: none;
-      }
+    h1  {
+      display: var(--heading-display);
     }
     p, button, .button, label, input[type="email"], input[type="text"], li, td, th {
       font-family: Arial, sans-serif;
@@ -59,27 +70,17 @@
       height: 100px;
       fill: #FF4F64;
       margin-bottom: -2rem;
-    }
-    @supports (-moz-appearance: none) {
-      svg {
-        display: none;
-      }
+      display: var(--logo-display);
     }
 
     /* Layouts */
     main {
       padding-bottom: 2rem;
       flex: 0 0 auto;
-      max-width: 500px;
+      max-width: var(--main-max-width);
       background: white;
       border-radius: 20px;
-      padding: 2rem;
-    }
-    @supports (-moz-appearance: none) {
-      main {
-        max-width: unset;
-        padding: 0;
-      }
+      padding: var(--main-padding);
     }
     main > :first-child {
       margin-top: 0;
@@ -163,6 +164,10 @@
       margin: 0 0 0 0;
       padding: 0;
     }
+
+    [data-declarative-content] {
+      display: var(--declarative-content-display);
+    }
   </style>
 </html>
 <body>
@@ -174,10 +179,14 @@
     </svg>
       <h1>Simple Analytics Extension</h1>
   <main>
-      <p>Awesome you're using our extension. We made it as simple as possible to block your own requests. Click the Simple Analytics extension icon to disable your visits on your websites. If the icon is gray it will not record your visits and shows the amount of requests blocked in that tab.</p>
+      <p>Awesome you're using our extension. We made it as simple as possible to block your own requests. Click the Simple Analytics extension icon to disable your visits on your websites.</p>
+
+      <p data-declarative-content>If the icon is gray it will not record your visits and shows the amount of requests blocked in that tab.</p>
+
+      <p>The icon will show a badge with a count of the amount of visits it blocked in the current session. Below you'll find a list of total visits being blocked.</p>
 
       <h2>Websites where you are invisible</h2>
-      <p>Behind the websites you also see the amount of visits it blocked.</p>
+      <p>Behind the websites you also see the amount of visits it blocked. None of this information is send to any server</p>
       <ul class="websites"></ul>
 
       <div data-js="scripts" style="display: none;">

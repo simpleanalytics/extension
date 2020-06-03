@@ -25,7 +25,6 @@
     "*://*.simpleanalyticscdn.com/*",
     "webRequest",
     "webRequestBlocking",
-    // "declarativeContent",
     "notifications",
     "storage",
     "activeTab"

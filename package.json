@@ -1,0 +1,9 @@
+{
+  "scripts": {
+    "build:firefox": "rm -rf ./tmp ./dist/firefox.zip && node build.js firefox && zip -j ./dist/firefox.zip background.js ./tmp/manifest.json options.html options.js 128.png && rm -rf ./tmp",
+    "build:chrome": "rm -rf ./tmp ./dist/chrome.zip && node build.js chrome && zip -j ./dist/chrome.zip background.js ./tmp/manifest.json options.html options.js 128.png 128-gray.png && rm -rf ./tmp"
+  },
+  "devDependencies": {
+    "deepmerge": "^4.2.2"
+  }
+}
