@@ -2,5 +2,6 @@
   "version": "1.4",
   "options_ui": {
     "browser_style": true
-  }
+  },
+  "permissions": ["notifications"]
 }

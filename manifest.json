@@ -1,6 +1,6 @@
 {
   "name": "Simple Analytics",
-  "description": "Block your own requests so they don't count towards your stats in Simple Analytics",
+  "description": "Block your visits so they don't count towards your stats in Simple Analytics",
   "manifest_version": 2,
   "options_ui": {
     "page": "options.html",
@@ -24,7 +24,6 @@
     "*://*.simpleanalyticscdn.com/*",
     "webRequest",
     "webRequestBlocking",
-    "notifications",
     "storage",
     "activeTab"
   ]
