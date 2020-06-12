@@ -3,9 +3,9 @@
 
 let blacklist = [];
 let scripts = [
-  "*://*.simpleanalytics.io/*",
-  "*://*.simpleanalytics.com/*",
-  "*://*.simpleanalyticscdn.com/*",
+  "*://cdn.simpleanalytics.io/*",
+  "*://api.simpleanalytics.io/*",
+  "*://scripts.simpleanalyticscdn.com/*",
 ];
 let tabs = {};
 
@@ -33,7 +33,9 @@ const warn = (message) => {
 
 const blockRequests = function (details) {
   const { tabId } = details;
-  const initiator = details.initiator || details.url;
+  const initiator =
+    details.initiator || details.originUrl || details.documentUrl;
+
   const basename = initiator ? getUrlBase(initiator) : null;
   const found =
     blacklist.length &&
@@ -87,7 +89,7 @@ function createSetIconAction(path, callback) {
 
 const updateDeclarativeContent = () => {
   if (!chrome.declarativeContent)
-    return warn(
+    return console.warn(
       "Because declarativeContent is not supported we can not update the app icon"
     );
   chrome.storage.local.get(["blacklist"], ({ blacklist }) => {
@@ -194,7 +196,7 @@ const getFileUrl = (url) => {
 let waitingPermissions = {};
 
 const requestPermissionForUrl = (basename, basenames) =>
-  new Promise((resolve) => {
+  new Promise(() => {
     const websites = basenames
       .filter(({ type }) => type === "website")
       .map(({ name }) => `*://*.${name}/*`);
@@ -221,6 +223,7 @@ const requestPermissionForUrl = (basename, basenames) =>
           }
           return console.error(chrome.runtime.lastError.message);
         }
+
         if (!granted)
           return alert(
             `Oops, no permission to skip your visits on ${basenames
@@ -241,6 +244,7 @@ const requestPermissionForUrl = (basename, basenames) =>
               added: new Date().toISOString(),
             });
         }
+
         if (addWebsites.length)
           chrome.storage.local.set({
             blacklist: [...blacklist, ...addWebsites],
@@ -257,15 +261,20 @@ const checkForScripts = (basename) =>
   new Promise((resolve, reject) => {
     chrome.tabs.executeScript(
       {
-        code: `(document.scripts ? [...document.scripts] : []).map(({src}) => src).filter(item => item && (item.indexOf('${basename}') > -1 || item.indexOf('.simpleanalytics.') > -1))`,
+        code: `(document.scripts ? [...document.scripts] : []).map(({src}) => src).filter(item => item && (item.indexOf('${basename}') > -1 || item.indexOf('cdn.simpleanalytics.io') > -1 || item.indexOf('scripts.simpleanalyticscdn.com') > -1))`,
       },
       function ([scripts] = []) {
         if (chrome.runtime.lastError)
           return reject(chrome.runtime.lastError.message);
 
-        const usesSimpleAnalytics = (scripts || []).find(
-          (item) => item.indexOf(".simpleanalytics.") > -1
-        );
+        const usesSimpleAnalytics = (scripts || []).find((item) => {
+          const { hostname } = new URL(item);
+          return [
+            "cdn.simpleanalytics.io",
+            "scripts.simpleanalyticscdn.com",
+          ].includes(hostname);
+        });
+
         if (usesSimpleAnalytics)
           return resolve([{ name: basename, type: "website" }]);
 
@@ -298,13 +307,6 @@ chrome.browserAction.onClicked.addListener(function (tab) {
 
   if (!basename) return safeAlert("Invalid website");
 
-  // Prevent blocking simpleanalytics.com to not break the dashboard
-  if (basename.endsWith("simpleanalytics.com")) {
-    return safeAlert(
-      "You can not block simpleanalytics.com because it will break the charts."
-    );
-  }
-
   // Fix to prevent the Firefox error "permissions.request may only be called from a user input handler"
   if (
     waitingPermissions &&
@@ -315,7 +317,7 @@ chrome.browserAction.onClicked.addListener(function (tab) {
 
   return checkForScripts(basename)
     .then((scripts) => {
-      requestPermissionForUrl(basename, scripts).then(console.log);
+      requestPermissionForUrl(basename, scripts).catch(console.error);
     })
     .catch(console.error);
 });

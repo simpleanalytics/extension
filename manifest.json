@@ -3,9 +3,7 @@
   "description": "Block your visits so they don't count towards your stats in Simple Analytics",
   "manifest_version": 2,
   "options_ui": {
-    "page": "options.html",
-    "chrome_style": true,
-    "browser_style": true
+    "page": "options.html"
   },
   "background": {
     "scripts": ["background.js"],
@@ -20,7 +18,6 @@
   "optional_permissions": ["<all_urls>"],
   "permissions": [
     "*://*.simpleanalytics.io/*",
-    "*://*.simpleanalytics.com/*",
     "*://*.simpleanalyticscdn.com/*",
     "webRequest",
     "webRequestBlocking",
