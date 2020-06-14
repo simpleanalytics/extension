@@ -1,31 +1,31 @@
 <html>
   <style>
     :root {
-      --background-color: #EEF9FF;
-      --font-family: Arial, sans-serif;
-      --heading-text-align: center;
-      --heading-display: block;
-      --logo-display: block;
-      --main-max-width: 500px;
-      --main-padding: 2rem;
+      --background-color: transparent;
+      --font-family: Roboto, system-ui, sans-serif;
       --declarative-content-display: unset;
+      --font-size-body: 13px;
+      --font-size-heading: 13px;
+      --font-weight-body: normal;
+      --font-weight-heading: 500;
+      --margin-top: 0;
     }
     @supports (-moz-appearance: none) {
       :root {
-        --background-color: transparent;
         --font-family: inherit;
-        --heading-text-align: left;
-        --heading-display: none;
-        --logo-display: none;
-        --main-max-width: unset;
-        --main-padding: 0;
         --declarative-content-display: none;
+        --font-size-body: 14px;
+        --font-size-heading: 16px;
+        --font-weight-body: 400;
+        --font-weight-heading: 600;
+        --line-height-heading: 22px;
+        --margin-top: 1rem;
       }
     }
     body, html {
       margin: 0;
       padding: 0;
-      height: 100%;
+      min-height: 100%;
     }
     body {
       background: var(--background-color);
@@ -34,27 +34,25 @@
       justify-content: center;
       align-items: center;
       flex-direction: column;
+      font-family: var(--font-family);
+      font-size: var(--font-size-body);
+      font-weight: var(--font-weight-body);
+      line-height: 150%;
     }
     * {
       box-sizing: border-box;
     }
     h1, h2, h3, h4 {
-      font-family: var(--font-family);
-      color: #415659;
-      margin: 2rem 0 1rem 0;
-      line-height: 1.5;
-      text-align: var(--heading-text-align);
+      color: #1f1f1f;
+      margin: 1rem 0 0.6rem 0;
+      font-size: var(--font-size-heading);
+      font-weight: var(--font-weight-heading);
+      line-height: var(--line-height-heading, var(--line-height-body, 150%));
     }
     h1 + p, h2 + p {
       margin-top: -0.5rem;
     }
-    h1  {
-      display: var(--heading-display);
-    }
     p, button, .button, label, input[type="email"], input[type="text"], li, td, th {
-      font-family: Arial, sans-serif;
-      font-size: 15px;
-      line-height: 170%;
       color: #3e3e3e;
     }
     p strong, li strong {
@@ -64,34 +62,17 @@
       color: #00C5E5;
     }
 
-    /* Logo */
-    svg {
-      width: 100px;
-      height: 100px;
-      fill: #FF4F64;
-      margin-bottom: -2rem;
-      display: var(--logo-display);
-    }
-
     /* Layouts */
     main {
-      padding-bottom: 2rem;
       flex: 0 0 auto;
-      max-width: var(--main-max-width);
       background: white;
       border-radius: 20px;
-      padding: var(--main-padding);
+      margin: 0 1rem 1rem 1rem;
+      margin-top: var(--margin-top, 1rem);
     }
-    main > :first-child {
+
+    main > *:first-child {
       margin-top: 0;
-    }
-    main > :last-child {
-      margin-bottom: 0;
-    }
-    @media (max-width: 600px) {
-      main {
-        padding-top: 1.5rem;
-      }
     }
 
     /* Customize the label (the container) */
@@ -103,6 +84,8 @@
       cursor: pointer;
       user-select: none;
       word-wrap: anywhere;
+      font-size: 15px;
+      line-height: 170%;
     }
 
     /* Hide the browser's default checkbox */
@@ -168,16 +151,30 @@
     [data-declarative-content] {
       display: var(--declarative-content-display);
     }
+
+    input[type="text"] {
+      all: unset;
+      border: 1px solid grey;
+      padding: 6px;
+      border-radius: 3px;
+      width: 300px;
+    }
+
+    .button {
+      all: unset;
+      padding: 7px 14px;
+      background-color: #FF4F64;
+      border-radius: 3px;
+      color: white;
+    }
+
+    label.label {
+      font-size: 12px;
+      display: block;
+    }
   </style>
 </html>
 <body>
-
-    <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.0" x="0px" y="0px" viewBox="0 0 100 100" enable-background="new 0 0 100 100" xml:space="preserve">
-      <rect x="20" y="53" width="10" height="30"></rect>
-      <rect x="44" y="35" width="10" height="48"></rect>
-      <rect x="68" y="18" width="10" height="65"></rect>
-    </svg>
-      <h1>Simple Analytics Extension</h1>
   <main>
       <p>Awesome you're using our <span data-extension-text>extension</span>. We made it as simple as possible to block your own requests. Click the Simple Analytics <span data-extension-text>extension</span> icon to disable your visits on your websites.</p>
 
@@ -186,14 +183,24 @@
       <p>The icon will show a badge with a count of the amount of visits it blocked in the current session. Below you'll find a list of total visits being blocked.</p>
 
       <h2>Websites where you are invisible</h2>
-      <p>Behind the websites you also see the amount of visits it blocked. None of this information is send to any server</p>
-      <ul class="websites"></ul>
+      <p>Behind the websites you also see the amount of visits it blocked. None of this information is send to any server.</p>
+      <ul class="websites" style="display: none;"></ul>
 
       <div data-js="scripts" style="display: none;">
         <h2>Extra scripts being blocked</h2>
         <p>Remove them if you don't recognise them</p>
         <ul class="scripts"></ul>
       </div>
+
+      <form>
+        <h2>Add URL of custom script to block</h2>
+        <p>Some customers might want to block a script on multiple domains. We can't detect all scripts on your domains. With this form you can add your scripts which will be blocked as well.</p>
+
+        <p style="color: #FF4F64; display: none;" data-js="feedback"></p>
+
+        <input style="margin-top: 0.5rem;" id="url" type="text" name="url" placeholder="https://s.example.com/latest.js" />
+        <input style="margin-top: 0.5rem;" type="submit" class="button" value="Add script" />
+      </form>
   </main>
 
   <script src="options.js"></script>

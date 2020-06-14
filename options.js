@@ -21,6 +21,7 @@ chrome.storage.local.get(["blacklist"], ({ blacklist: blacklistLocal }) => {
 
   // We only inject HTML which is safe to inject
   document.querySelector("ul.websites").innerHTML = websitesSafe.join("\n");
+  document.querySelector("ul.websites").style.display = "inherit";
 
   blacklist.forEach(({ hostname }) => {
     document
@@ -30,13 +31,9 @@ chrome.storage.local.get(["blacklist"], ({ blacklist: blacklistLocal }) => {
         chrome.storage.local.get(
           ["blacklist"],
           ({ blacklist: blacklistLocal2 }) => {
-            console.log("enabled", enabled);
-            console.log("blacklistLocal2", blacklistLocal2);
             const newBlacklist = [...blacklistLocal2].map((item) =>
               item.hostname === hostname ? { ...item, enabled } : item
             );
-            console.log("blacklistLocal2 2", blacklistLocal2);
-            console.log("newBlacklist", newBlacklist);
             chrome.storage.local.set({ blacklist: [...newBlacklist] });
           }
         );
@@ -44,7 +41,7 @@ chrome.storage.local.get(["blacklist"], ({ blacklist: blacklistLocal }) => {
   });
 });
 
-chrome.storage.local.get(["scripts"], ({ scripts: scriptsLocal }) => {
+chrome.storage.local.get(["scripts"], ({ scripts: scriptsLocal = [] }) => {
   const scriptsSafe = [];
   const nonSaScripts = scriptsLocal.filter(
     (name) =>
@@ -89,3 +86,80 @@ if (IS_FIREFOX) {
     textElement.textContent = "add-on";
   });
 }
+
+const feedback = document.querySelector('[data-js="feedback"]');
+const input = document.querySelector('[name="url"]');
+
+const showError = (message) => {
+  feedback.style.display = "none";
+  if (!message) return;
+
+  setTimeout(() => {
+    feedback.textContent = message;
+    feedback.style.display = "block";
+  }, 100);
+};
+
+document.querySelector("form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  feedback.style.display = "none";
+
+  let url;
+  try {
+    url = new URL(input.value);
+  } catch (e) {}
+  if (!url) {
+    return showError("Please fill in a (valid) URL");
+  }
+
+  return chrome.permissions.request(
+    {
+      origins: [url.href],
+    },
+    (granted) => {
+      if (!granted) {
+        if (chrome.runtime.lastError)
+          return showError(chrome.runtime.lastError);
+        else showError("No permission given...");
+        return;
+      }
+
+      // Save url to both websites and scripts
+      chrome.storage.local.get(["scripts"], ({ scripts = [] }) => {
+        chrome.storage.local.set(
+          {
+            scripts: [...new Set([...scripts, url.href])],
+          },
+          () => {
+            chrome.storage.local.get(["blacklist"], ({ blacklist = [] }) => {
+              const found = blacklist.find(
+                ({ hostname }) => hostname === url.hostname
+              );
+              if (found) {
+                found.enabled = true;
+              }
+              chrome.storage.local.set(
+                {
+                  blacklist: found
+                    ? [...blacklist]
+                    : [
+                        ...blacklist,
+                        {
+                          hostname: url.hostname,
+                          enabled: true,
+                          timesBlocked: 0,
+                          added: new Date().toISOString(),
+                        },
+                      ],
+                },
+                () => {
+                  document.location.reload();
+                }
+              );
+            });
+          }
+        );
+      });
+    }
+  );
+});

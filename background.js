@@ -92,7 +92,7 @@ const updateDeclarativeContent = () => {
     return console.warn(
       "Because declarativeContent is not supported we can not update the app icon"
     );
-  chrome.storage.local.get(["blacklist"], ({ blacklist }) => {
+  chrome.storage.local.get(["blacklist"], ({ blacklist = [] }) => {
     if (!blacklist || !blacklist.length) return;
     chrome.declarativeContent.onPageChanged.removeRules(undefined, function () {
       createSetIconAction("128-gray.png", function (setIconAction) {
@@ -133,7 +133,7 @@ chrome.storage.local.get(["blacklist"], ({ blacklist: blacklistLocal }) => {
   if (blacklistLocal) blacklist = blacklistLocal;
   updateDeclarativeContent();
 });
-chrome.storage.local.get(["scripts"], ({ scripts: scriptsLocal }) => {
+chrome.storage.local.get(["scripts"], ({ scripts: scriptsLocal = [] }) => {
   if (scriptsLocal) scripts = scriptsLocal;
 });
 
