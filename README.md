@@ -1,4 +1,8 @@
-# Simple Analytics extension
+<a href="https://simpleanalytics.com/?ref=github.com/simpleanalytics/extension">
+  <img src="https://assets.simpleanalytics.com/images/logos/logo-github-readme.png" alt="Simple Analytics logo" align="right" height="62" />
+</a>
+
+# Extension
 
 This extension useful for customers of Simple Analytics or non customers who want to block their visits to a specific website where Simple Analytics is installed. This way your stats will not included in the dashboard of that website. We do this via an extension so we don't need to record IP addresses. This makes it also more accurate and more visible when traveling or when IPs do change.
 
