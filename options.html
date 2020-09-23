@@ -79,12 +79,12 @@
     .checkbox {
       display: inline-block;
       position: relative;
-      padding-left: 26px;
-      margin-bottom: 12px;
+      padding-left: 22px;
+      margin-bottom: 8px;
       cursor: pointer;
       user-select: none;
       word-wrap: anywhere;
-      font-size: 15px;
+      font-size: var(--font-size-body);
       line-height: 170%;
     }
 
@@ -98,10 +98,10 @@
     /* Create a custom checkbox */
     .checkmark {
       position: absolute;
-      top: 5px;
+      top: 4px;
       left: 0;
-      height: 18px;
-      width: 18px;
+      height: 16px;
+      width: 16px;
       border-radius: 3px;
       border: 1px solid #9AA7B4;
     }
@@ -131,10 +131,10 @@
 
     /* Style the checkmark/indicator */
     .checkbox .checkmark:after {
-      left: 6px;
+      left: 5px;
       top: 1px;
       width: 3px;
-      height: 10px;
+      height: 8px;
       border: solid white;
       border-width: 0 2px 2px 0;
       transform: rotate(45deg);
@@ -185,22 +185,6 @@
       <h2>Websites where you are invisible</h2>
       <p>Behind the websites you also see the amount of visits it blocked. None of this information is send to any server.</p>
       <ul class="websites" style="display: none;"></ul>
-
-      <div data-js="scripts" style="display: none;">
-        <h2>Extra scripts being blocked</h2>
-        <p>Remove them if you don't recognise them</p>
-        <ul class="scripts"></ul>
-      </div>
-
-      <form>
-        <h2>Add URL of custom script to block</h2>
-        <p>Some customers might want to block a script on multiple domains. We can't detect all scripts on your domains. With this form you can add your scripts which will be blocked as well.</p>
-
-        <p style="color: #FF4F64; display: none;" data-js="feedback"></p>
-
-        <input style="margin-top: 0.5rem;" id="url" type="text" name="url" placeholder="https://s.example.com/latest.js" />
-        <input style="margin-top: 0.5rem;" type="submit" class="button" value="Add script" />
-      </form>
   </main>
 
   <script src="options.js"></script>

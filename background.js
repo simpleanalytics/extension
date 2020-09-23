@@ -1,15 +1,15 @@
 /* eslint-env browser */
 /* globals chrome */
 
-let blacklist = [];
-let scripts = [
-  "*://cdn.simpleanalytics.io/*",
-  "*://api.simpleanalytics.io/*",
-  "*://scripts.simpleanalyticscdn.com/*",
-];
+let blocklist = [];
 let tabs = {};
 
 const IS_FIREFOX = navigator.userAgent.includes("Firefox");
+const DEBUG = false;
+
+const debug = (...messages) => {
+  if (DEBUG) console.info("[DEBUG]", ...messages);
+};
 
 const safeAlert = (message) => {
   // We need to run it in executeScript because Firefox does not show the alrt otherwise
@@ -31,6 +31,9 @@ const warn = (message) => {
   });
 };
 
+const findScript = (scripts, url) =>
+  scripts.find((script) => script.enabled && url === script.url);
+
 const blockRequests = function (details) {
   const { tabId } = details;
   const initiator =
@@ -38,21 +41,34 @@ const blockRequests = function (details) {
 
   const basename = initiator ? getUrlBase(initiator) : null;
   const found =
-    blacklist.length &&
-    blacklist.find(({ hostname, enabled }) => hostname === basename && enabled);
+    blocklist.length &&
+    blocklist.find((website) => {
+      const blockScript = !!findScript(website.scripts, details.url);
+      return website.basename === basename && website.enabled && blockScript;
+    });
+
+  // debug("");
+  // debug("blockRequests blocklist:", blocklist);
+  // debug("blockRequests details:", details);
+  // debug("blockRequests found:", found ? found : "Nothing.");
+  // debug("");
 
   if (found) {
-    const isSame =
-      details.url === found.lastUrl &&
-      found.lastTime &&
-      new Date() - new Date(found.lastTime) < 1000;
+    const isSame = false;
+    // const isSame =
+    //   details.url === found.lastUrl &&
+    //   found.lastTime &&
+    //   new Date() - new Date(found.lastTime) < 500;
 
-    found.lastUrl = details.url;
-    found.lastTime = new Date();
+    // found.lastUrl = details.url;
+    // found.lastTime = new Date();
 
-    if (!isSame) found.timesBlocked++;
+    // if (!isSame) found.timesBlocked++;
 
-    chrome.storage.local.set({ blacklist: [...blacklist] });
+    const script = findScript(found.scripts, details.url);
+    if (script) script.timesBlocked = (script.timesBlocked || 0) + 1;
+
+    chrome.storage.local.set({ blocklist: [...blocklist] });
 
     // Update counter for the tabs
     if (tabId) {
@@ -89,32 +105,40 @@ function createSetIconAction(path, callback) {
 
 const updateDeclarativeContent = () => {
   if (!chrome.declarativeContent)
-    return console.warn(
+    return warn(
       "Because declarativeContent is not supported we can not update the app icon"
     );
-  chrome.storage.local.get(["blacklist"], ({ blacklist = [] }) => {
-    if (!blacklist || !blacklist.length) return;
-    chrome.declarativeContent.onPageChanged.removeRules(undefined, function () {
-      createSetIconAction("128-gray.png", function (setIconAction) {
-        const rules = blacklist
-          .filter(({ enabled }) => enabled)
-          .map(({ hostname }) => {
-            return {
-              conditions: [
-                new chrome.declarativeContent.PageStateMatcher({
-                  pageUrl: { hostContains: `.${hostname}` },
-                }),
-                new chrome.declarativeContent.PageStateMatcher({
-                  pageUrl: { hostContains: `${hostname}` },
-                }),
-              ],
-              actions: [setIconAction],
-            };
+  chrome.storage.local.get(
+    ["blocklist"],
+    ({ blocklist: blocklistLocal = [] }) => {
+      if (!blocklistLocal || !blocklistLocal.length) return;
+
+      chrome.declarativeContent.onPageChanged.removeRules(
+        undefined,
+        function () {
+          createSetIconAction("128-gray.png", function (setIconAction) {
+            const rules = blocklistLocal
+              .filter(({ enabled }) => enabled)
+              .map(({ basename }) => {
+                return {
+                  conditions: [
+                    new chrome.declarativeContent.PageStateMatcher({
+                      pageUrl: { hostContains: `.${basename}` },
+                    }),
+                    new chrome.declarativeContent.PageStateMatcher({
+                      pageUrl: { hostContains: `${basename}` },
+                    }),
+                  ],
+                  actions: [setIconAction],
+                };
+              });
+
+            chrome.declarativeContent.onPageChanged.addRules(rules);
           });
-        chrome.declarativeContent.onPageChanged.addRules(rules);
-      });
-    });
-  });
+        }
+      );
+    }
+  );
 };
 
 chrome.runtime.onInstalled.addListener(function () {
@@ -129,53 +153,66 @@ const showErrors = (error) => {
 chrome.webRequest.onErrorOccurred.removeListener(showErrors);
 
 // Load data when loading the app after browser reboot
-chrome.storage.local.get(["blacklist"], ({ blacklist: blacklistLocal }) => {
-  if (blacklistLocal) blacklist = blacklistLocal;
+chrome.storage.local.get(["blocklist"], ({ blocklist: blocklistLocal }) => {
+  if (blocklistLocal) blocklist = [...blocklistLocal];
   updateDeclarativeContent();
 });
-chrome.storage.local.get(["scripts"], ({ scripts: scriptsLocal = [] }) => {
-  if (scriptsLocal) scripts = scriptsLocal;
-});
 
-function updateListeners(storageScripts, storageBlacklist) {
-  if (storageScripts) {
-    storageScripts = storageScripts.newValue || storageScripts;
-    scripts = [...storageScripts];
+function updateListeners(blocklistLocal) {
+  if (!blocklistLocal) return;
 
-    chrome.webRequest.onBeforeRequest.removeListener(blockRequests);
-    chrome.webRequest.onErrorOccurred.removeListener(showErrors);
+  blocklist = [...blocklistLocal];
 
-    chrome.webRequest.onErrorOccurred.addListener(showErrors, {
-      urls: [...scripts],
-    });
-    chrome.webRequest.onBeforeRequest.addListener(
-      blockRequests,
-      { urls: [...scripts], types: ["xmlhttprequest", "script"] },
-      ["blocking"]
-    );
-  }
+  const urls = blocklist.reduce((list, { enabled, scripts = [] }) => {
+    if (!enabled) return list;
+    const add = scripts.filter(({ enabled }) => enabled).map(({ url }) => url);
+    return [...list, ...add];
+  }, []);
 
-  if (storageBlacklist) {
-    const transform = ({ hostname, enabled }) => hostname + enabled;
-    const oldString = (storageBlacklist.oldValue || [])
-      .map(transform)
-      .join("-");
-    const newString = (storageBlacklist.newValue || [])
-      .map(transform)
-      .join("-");
+  debug("addListener urls", urls);
 
-    blacklist = [...storageBlacklist.newValue];
-    if (oldString !== newString) updateDeclarativeContent();
-  }
+  chrome.webRequest.onBeforeRequest.removeListener(blockRequests);
+  chrome.webRequest.onErrorOccurred.removeListener(showErrors);
+
+  if (!urls.length) return;
+
+  chrome.webRequest.onErrorOccurred.addListener(showErrors, {
+    urls: [...urls],
+  });
+  chrome.webRequest.onBeforeRequest.addListener(
+    blockRequests,
+    { urls: [...urls], types: ["xmlhttprequest", "script"] },
+    ["blocking"]
+  );
 }
+
+const generateHash = (object) => {
+  if (!object) return null;
+  return object
+    .map(({ basename, enabled, scripts = [] }) => {
+      return (
+        basename +
+        enabled +
+        scripts.map(({ url, enabled }) => url + enabled).join("_")
+      );
+    })
+    .join("_");
+};
 
 // Act on store changes to save it to internal variables
 chrome.storage.onChanged.addListener(
-  ({ blacklist: storageBlacklist, scripts: storageScripts }, areaName) => {
+  ({ blocklist: storageblocklist }, areaName) => {
     if (areaName !== "local") return;
 
     // Update listeners when updating storage
-    updateListeners(storageScripts, storageBlacklist);
+    updateListeners(storageblocklist.newValue);
+
+    // We only want to update the declarative content when some setting has changed
+    // not when the counter of timesBlocked it increased.
+    const oldValue = generateHash(storageblocklist.oldValue);
+    const newValue = generateHash(storageblocklist.newValue);
+
+    if (oldValue !== newValue) updateDeclarativeContent();
   }
 );
 
@@ -203,12 +240,7 @@ let waitingPermissions = {};
 
 const requestPermissionForUrl = (basename, basenames) =>
   new Promise(() => {
-    const websites = basenames
-      .filter(({ type }) => type === "website")
-      .map(({ name }) => `*://*.${name}/*`);
-    const scripts2 = basenames
-      .filter(({ type }) => type === "script")
-      .map(({ name }) => name);
+    const websites = basenames.map(({ basename }) => `*://*.${basename}/*`);
 
     chrome.permissions.request(
       {
@@ -237,28 +269,21 @@ const requestPermissionForUrl = (basename, basenames) =>
               .join(", ")}`
           );
 
-        const addWebsites = [];
-        for (const { name } of basenames.filter(
-          ({ type }) => type === "website"
-        )) {
-          const found = blacklist.find(({ hostname }) => hostname === name);
-          if (!found)
-            addWebsites.push({
-              hostname: name,
-              enabled: true,
-              timesBlocked: 0,
-              added: new Date().toISOString(),
-            });
-        }
+        // Make blocklist unique
+        const newBlocklist = [...blocklist, ...basenames].reduce(
+          (list, website) => {
+            if (list.find((site) => site.basename === website.basename))
+              return list;
+            else list.push(website);
+            return list;
+          },
+          []
+        );
 
-        if (addWebsites.length)
-          chrome.storage.local.set({
-            blacklist: [...blacklist, ...addWebsites],
-          });
+        if (basenames.length) debug("Added to the blocklist:", basenames);
 
-        chrome.storage.local.set({
-          scripts: [...new Set([...scripts, ...scripts2])],
-        });
+        chrome.storage.local.set({ blocklist: [...newBlocklist] });
+        updateListeners(newBlocklist);
       }
     );
   });
@@ -273,7 +298,7 @@ const checkForScripts = (basename) =>
         if (chrome.runtime.lastError)
           return reject(chrome.runtime.lastError.message);
 
-        const usesSimpleAnalytics = (scripts || []).find((item) => {
+        const simpleAnalyticsScript = (scripts || []).find((item) => {
           const { hostname } = new URL(item);
           return [
             "cdn.simpleanalytics.io",
@@ -281,8 +306,21 @@ const checkForScripts = (basename) =>
           ].includes(hostname);
         });
 
-        if (usesSimpleAnalytics)
-          return resolve([{ name: basename, type: "website" }]);
+        if (simpleAnalyticsScript) {
+          return resolve([
+            {
+              basename,
+              enabled: true,
+              scripts: [
+                {
+                  url: simpleAnalyticsScript,
+                  enabled: true,
+                  timesBlocked: 0,
+                },
+              ],
+            },
+          ]);
+        }
 
         // Filter scripts like /latest.js and /v2/app.js
         const cleanScripts = (scripts || []).filter((item) => {
@@ -295,14 +333,18 @@ const checkForScripts = (basename) =>
         // Add to URLS
         if (cleanScripts.length > 0) {
           resolve([
-            { name: basename, type: "website" },
-            ...cleanScripts.map((script) => ({
-              name: getFileUrl(script),
-              type: "script",
-            })),
+            {
+              basename,
+              enabled: true,
+              scripts: cleanScripts.map((script) => ({
+                url: getFileUrl(script),
+                enabled: true,
+                timesBlocked: 0,
+              })),
+            },
           ]);
         } else {
-          resolve([{ name: basename, type: "website" }]);
+          resolve([{ basename, scripts: [] }]);
         }
       }
     );
@@ -323,6 +365,7 @@ chrome.browserAction.onClicked.addListener(function (tab) {
 
   return checkForScripts(basename)
     .then((scripts) => {
+      debug("detected these scripts:", scripts);
       requestPermissionForUrl(basename, scripts).catch(console.error);
     })
     .catch(console.error);
@@ -330,10 +373,15 @@ chrome.browserAction.onClicked.addListener(function (tab) {
 
 // When the extension loads again (after a browser restart)
 // make sure to load the scripts from storage
-chrome.storage.local.get(["scripts"], ({ scripts: scriptsStorage = [] }) => {
-  if (scriptsStorage.length) updateListeners(scriptsStorage);
-  else updateListeners(scripts);
-});
+chrome.storage.local.get(
+  ["blocklist"],
+  ({ blocklist: blocklistStorage = [] }) => {
+    debug("initialization blocklist", blocklistStorage);
+
+    if (blocklistStorage.length) updateListeners(blocklistStorage);
+    else updateListeners(blocklist);
+  }
+);
 
 // Very long list with all TLDs that have a dot in them
 const tldsWithDots = [

@@ -1,83 +1,94 @@
-let blacklist = [];
-const IS_FIREFOX = navigator.userAgent.includes("Firefox");
+let blocklist = [];
 
-chrome.storage.local.get(["blacklist"], ({ blacklist: blacklistLocal }) => {
-  if (blacklistLocal) blacklist = blacklistLocal;
+const IS_FIREFOX = navigator.userAgent.includes("Firefox");
+const DEBUG = false;
+
+const debug = (...messages) => {
+  if (DEBUG) console.info("[DEBUG]", ...messages);
+};
+
+chrome.storage.local.get(["blocklist"], ({ blocklist: blocklistLocal }) => {
+  if (blocklistLocal) blocklist = [...blocklistLocal];
+
+  debug("blocklist", blocklist);
 
   const websitesSafe = [];
-  blacklist.forEach(({ hostname, enabled, timesBlocked }) => {
-    const hostnameSafe = hostname.replace(/[^a-z0-9./?-]+/gi, "");
+  blocklist.forEach(({ basename, enabled, scripts }) => {
+    const hostnameSafe = basename.replace(/[^a-z0-9./?-]+/gi, "");
     websitesSafe.push(`
       <li>
         <label class="checkbox" for="${hostnameSafe}">
           <input type="checkbox" id="${hostnameSafe}" ${
       enabled ? "checked" : ""
-    }>
-          <span class="checkmark"></span> ${hostnameSafe}
+    } data-website="${basename}">
+          <span class="checkmark"></span> ${basename}
         </label>
-        <small><em>(${parseInt(timesBlocked, 10)}x)</em></small>
+        ${scripts.length === 0 ? "<small><em>(no scripts)</em></small>" : ""}
       </li>`);
+
+    for (const script of scripts) {
+      const scriptSafe = script.url.replace(/[^a-z0-9./?-]+/gi, "");
+      const scriptName = script.url.replace(/^https?:\/\//, "");
+      websitesSafe.push(`
+        <li style="margin-left: 1.6rem;">
+          <label class="checkbox" for="${scriptSafe}">
+            <input type="checkbox" id="${scriptSafe}" ${
+        script.enabled ? "checked" : ""
+      } data-website="${basename}" data-script="${script.url}">
+            <span class="checkmark"></span> ${scriptName}
+            <small><em>(${parseInt(script.timesBlocked, 10)}x)</em></small>
+          </label>
+        </li>`);
+    }
   });
 
   // We only inject HTML which is safe to inject
   document.querySelector("ul.websites").innerHTML = websitesSafe.join("\n");
   document.querySelector("ul.websites").style.display = "inherit";
 
-  blacklist.forEach(({ hostname }) => {
-    document
-      .querySelector(`[id="${hostname}"]`)
-      .addEventListener("change", (event) => {
-        const enabled = event.target.checked;
-        chrome.storage.local.get(
-          ["blacklist"],
-          ({ blacklist: blacklistLocal2 }) => {
-            const newBlacklist = [...blacklistLocal2].map((item) =>
-              item.hostname === hostname ? { ...item, enabled } : item
-            );
-            chrome.storage.local.set({ blacklist: [...newBlacklist] });
-          }
-        );
-      });
-  });
-});
-
-chrome.storage.local.get(["scripts"], ({ scripts: scriptsLocal = [] }) => {
-  const scriptsSafe = [];
-  const nonSaScripts = scriptsLocal.filter(
-    (name) =>
-      name.indexOf(".simpleanalytics.") === -1 &&
-      name.indexOf(".simpleanalyticscdn.") === -1
+  const checkboxes = document.querySelectorAll(
+    `ul.websites input[type="checkbox"]`
   );
-  nonSaScripts.forEach((name) => {
-    const nameSafe = name.replace(/[^a-z0-9./?:-]+/gi, "");
-    scriptsSafe.push(`
-      <li>
-        <label class="checkbox" for="${nameSafe}">
-          <input type="checkbox" id="${nameSafe}" checked>
-          <span class="checkmark"></span> ${nameSafe}
-        </label>
-      </li>`);
-  });
 
-  if (nonSaScripts.length > 0) {
-    document.querySelector('[data-js="scripts"]').style.display = "block";
+  [...checkboxes].forEach((checkbox) => {
+    checkbox.addEventListener("change", ({ target }) => {
+      const website = target.getAttribute("data-website");
+      const script = target.getAttribute("data-script");
+      const { checked } = target;
 
-    // We only inject HTML which is safe to inject
-    document.querySelector("ul.scripts").innerHTML = scriptsSafe.join("\n");
-  }
-
-  nonSaScripts.forEach((name) => {
-    document
-      .querySelector(`[id="${name}"]`)
-      .addEventListener("change", (event) => {
-        const enabled = event.target.checked;
-        chrome.storage.local.get(["scripts"], ({ scripts: scriptsLocal2 }) => {
-          const newScriptsLocal = enabled
-            ? [...scriptsLocal2, name]
-            : [...scriptsLocal2].filter((localName) => localName !== name);
-          chrome.storage.local.set({ scripts: [...newScriptsLocal] });
+      // Update sub checkboxes when main website is clicked
+      const wholeWebsite = !script;
+      if (wholeWebsite) {
+        [...checkboxes].forEach((checkbox) => {
+          if (
+            checkbox.getAttribute("data-website") === website &&
+            checkbox.getAttribute("data-script")
+          ) {
+            checkbox.checked = checked;
+          }
         });
-      });
+      }
+
+      chrome.storage.local.get(
+        ["blocklist"],
+        ({ blocklist: blocklistLocal }) => {
+          const newBlocklist = [...blocklistLocal];
+          const site = newBlocklist.find(
+            ({ basename }) => website === basename
+          );
+          if (wholeWebsite) site.enabled = checked;
+
+          site.scripts = site.scripts.map((siteScript) => {
+            if (wholeWebsite || siteScript.url === script)
+              siteScript.enabled = checked;
+            return siteScript;
+          });
+
+          debug("newBlocklist", newBlocklist);
+          chrome.storage.local.set({ blocklist: [...newBlocklist] });
+        }
+      );
+    });
   });
 });
 
@@ -86,80 +97,3 @@ if (IS_FIREFOX) {
     textElement.textContent = "add-on";
   });
 }
-
-const feedback = document.querySelector('[data-js="feedback"]');
-const input = document.querySelector('[name="url"]');
-
-const showError = (message) => {
-  feedback.style.display = "none";
-  if (!message) return;
-
-  setTimeout(() => {
-    feedback.textContent = message;
-    feedback.style.display = "block";
-  }, 100);
-};
-
-document.querySelector("form").addEventListener("submit", (event) => {
-  event.preventDefault();
-  feedback.style.display = "none";
-
-  let url;
-  try {
-    url = new URL(input.value);
-  } catch (e) {}
-  if (!url) {
-    return showError("Please fill in a (valid) URL");
-  }
-
-  return chrome.permissions.request(
-    {
-      origins: [url.href],
-    },
-    (granted) => {
-      if (!granted) {
-        if (chrome.runtime.lastError)
-          return showError(chrome.runtime.lastError);
-        else showError("No permission given...");
-        return;
-      }
-
-      // Save url to both websites and scripts
-      chrome.storage.local.get(["scripts"], ({ scripts = [] }) => {
-        chrome.storage.local.set(
-          {
-            scripts: [...new Set([...scripts, url.href])],
-          },
-          () => {
-            chrome.storage.local.get(["blacklist"], ({ blacklist = [] }) => {
-              const found = blacklist.find(
-                ({ hostname }) => hostname === url.hostname
-              );
-              if (found) {
-                found.enabled = true;
-              }
-              chrome.storage.local.set(
-                {
-                  blacklist: found
-                    ? [...blacklist]
-                    : [
-                        ...blacklist,
-                        {
-                          hostname: url.hostname,
-                          enabled: true,
-                          timesBlocked: 0,
-                          added: new Date().toISOString(),
-                        },
-                      ],
-                },
-                () => {
-                  document.location.reload();
-                }
-              );
-            });
-          }
-        );
-      });
-    }
-  );
-});
