@@ -1,7 +1,28 @@
 {
-  "version": "1.7",
-  "options_ui": {
-    "chrome_style": true
+  "manifest_version": 3,
+  "action": {
+    "default_icon": "128.png",
+    "default_title": "Simple Analytics",
+    "default_popup": "popup.html"
   },
-  "permissions": ["declarativeContent"]
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": [
+    "storage",
+    "declarativeContent",
+    "tabs",
+    "scripting",
+    "activeTab",
+    "declarativeNetRequest",
+    "declarativeNetRequestWithHostAccess"
+  ],
+  "host_permissions": ["<all_urls>"],
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "icons": {
+    "128": "128.png"
+  }
 }

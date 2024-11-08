@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Simple Analytics Extension</title>
+    <style>
+      :root {
+        --bg-color: #eef9ff;
+        --button-color: #ff4f64;
+        --text-color: #415659;
+        --border-color: #a7b8bb;
+        --link-color: #2ec6df;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg-color: #2a3638;
+          --button-color: #b93545;
+          --text-color: #bbd2d5;
+          --border-color: #486164;
+          --link-color: #098195;
+        }
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        line-height: 1.5;
+      }
+
+      body {
+        font-family: Arial, sans-serif;
+        padding: 20px;
+        text-align: center;
+        background-color: var(--bg-color);
+        color: var(--text-color);
+        min-width: 250px;
+      }
+
+      a {
+        color: var(--link-color);
+        text-decoration: underline;
+        opacity: 1;
+      }
+
+      #block-button {
+        background-color: var(--button-color);
+        color: white;
+        border: none;
+        padding: 12px 24px;
+        font-size: 16px;
+        border-radius: 1000px;
+        cursor: pointer;
+      }
+
+      #block-button:hover {
+        opacity: 0.9;
+      }
+
+      p {
+        font-size: 14px;
+        margin: 0 0 10px 0;
+      }
+
+      h1 {
+        font-size: 18px;
+        margin-bottom: 15px;
+      }
+
+      .icon-explanation {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-top: 15px;
+      }
+
+      .icon-explanation img {
+        width: 32px;
+        height: 32px;
+        margin-right: 10px;
+      }
+
+      .icon-explanation p {
+        margin: 0;
+        text-align: left;
+      }
+
+      .text-sm {
+        font-size: 12px;
+      }
+      .text-center {
+        text-align: center;
+      }
+      .opacity-50 {
+        opacity: 0.5;
+      }
+
+      hr {
+        margin-top: 20px;
+        margin-bottom: 20px;
+        border: 0;
+        border-top: 1px solid var(--border-color);
+      }
+    </style>
+  </head>
+  <body>
+    <p>Hit the button to block your own visits on this website:</p>
+    <button id="block-button" aria-label="Block this website">Block</button>
+
+    <hr />
+
+    <div class="icon-explanation">
+      <img src="128.png" alt="Normal Icon" />
+      <p class="text-sm">
+        When the extension icon is <strong>red</strong>, your visits are being
+        collected.
+      </p>
+    </div>
+    <div class="icon-explanation">
+      <img src="128-gray.png" alt="Gray Icon" />
+      <p class="text-sm">
+        When the extension icon is <strong>gray</strong>, your visits are being
+        blocked on this website.
+      </p>
+    </div>
+
+    <hr />
+
+    <p class="text-sm text-center">
+      <a href="https://docs.simpleanalytics.com/extension" target="_blank"
+        >More info about this extension</a
+      >
+    </p>
+    <p class="text-sm text-center">
+      <span class="opacity-50">
+        Thanks for choosing the good side.<br />Cheers,
+      </span>
+      <a href="https://x.com/AdriaanDotCom" class="opacity-100">Adriaan</a>
+      <span class="opacity-50"> &amp;</span>
+      <a href="https://x.com/IronBrands16" class="opacity-100">Iron</a>
+    </p>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

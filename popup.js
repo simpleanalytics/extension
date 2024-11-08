@@ -1,413 +1,70 @@
-/* eslint-env browser */
-/* globals chrome */
+document.getElementById("block-button").addEventListener("click", () => {
+  // Get the active tab synchronously using the callback version
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    const tab = tabs[0];
+    const basename = getUrlBase(tab.url);
 
-let blocklist = [];
-let tabs = {};
-
-// Detect if the extension is running in Firefox
-const IS_FIREFOX =
-  typeof browser !== "undefined" && typeof browser.runtime !== "undefined";
-const DEBUG = false;
-
-const debug = (...messages) => {
-  if (DEBUG) console.info("[DEBUG]", ...messages);
-};
-
-const safeAlert = (message, tabId) => {
-  const alertMessage = `Simple Analytics: ${message.replace(
-    /[^a-zA-Z0-9 .]+/g,
-    ""
-  )}`;
-
-  if (IS_FIREFOX) {
-    // Firefox still supports tabs.executeScript
-    chrome.tabs.executeScript(tabId, {
-      code: `alert('${alertMessage}')`,
-    });
-  } else {
-    // Use scripting API in Chrome Manifest V3
-    chrome.scripting.executeScript({
-      target: { tabId },
-      func: (msg) => alert(msg),
-      args: [alertMessage],
-    });
-  }
-};
-
-const warn = (message, tabId) => {
-  const warnMessage = `Simple Analytics: ${message.replace(
-    /[^a-zA-Z0-9 .]+/g,
-    ""
-  )}`;
-
-  if (IS_FIREFOX) {
-    chrome.tabs.executeScript(tabId, {
-      code: `console.warn('${warnMessage}')`,
-    });
-  } else {
-    chrome.scripting.executeScript({
-      target: { tabId },
-      func: (msg) => console.warn(msg),
-      args: [warnMessage],
-    });
-  }
-};
-
-const findScript = (scripts, url) =>
-  scripts.find((script) => script.enabled && url === script.url);
-
-// Update the badge text
-const updateBadgeText = (text, tabId) => {
-  if (IS_FIREFOX) {
-    chrome.browserAction.setBadgeText({ text: text, tabId });
-    chrome.browserAction.setBadgeTextColor({ color: "white" });
-  } else {
-    chrome.action.setBadgeText({ text: text, tabId });
-  }
-};
-
-// Set the badge background color
-const setBadgeBackgroundColor = (color) => {
-  if (IS_FIREFOX) {
-    chrome.browserAction.setBadgeBackgroundColor({ color });
-  } else {
-    chrome.action.setBadgeBackgroundColor({ color });
-  }
-};
-
-// Replace webRequest blocking with declarativeNetRequest in Chrome
-function updateDynamicRules(blocklistLocal) {
-  if (IS_FIREFOX) return; // Skip for Firefox
-
-  const rules = [];
-  let ruleId = 1;
-
-  blocklistLocal.forEach((website) => {
-    if (!website.enabled) return;
-
-    website.scripts.forEach((script) => {
-      if (!script.enabled) return;
-
-      rules.push({
-        id: ruleId++,
-        priority: 1,
-        action: { type: "block" },
-        condition: {
-          urlFilter: script.url,
-          resourceTypes: ["xmlhttprequest", "script"],
-        },
-      });
-    });
-  });
-
-  // Clear existing rules and add new ones
-  chrome.declarativeNetRequest.getDynamicRules((existingRules) => {
-    const existingRuleIds = existingRules.map((rule) => rule.id);
-
-    chrome.declarativeNetRequest.updateDynamicRules(
-      {
-        removeRuleIds: existingRuleIds,
-        addRules: rules,
-      },
-      () => {
-        if (chrome.runtime.lastError) {
-          console.error(
-            "Error updating dynamic rules:",
-            chrome.runtime.lastError
-          );
-        }
-      }
-    );
-  });
-}
-
-// Function to update declarative content (page actions)
-const updateDeclarativeContent = () => {
-  if (!chrome.declarativeContent) {
-    console.warn("Declarative Content is not supported.");
-    return;
-  }
-
-  chrome.storage.local.get(
-    ["blocklist"],
-    ({ blocklist: blocklistLocal = [] }) => {
-      if (!blocklistLocal || !blocklistLocal.length) return;
-
-      chrome.declarativeContent.onPageChanged.removeRules(
-        undefined,
-        function () {
-          const rules = blocklistLocal
-            .filter(({ enabled }) => enabled)
-            .map(({ basename }) => {
-              return {
-                conditions: [
-                  new chrome.declarativeContent.PageStateMatcher({
-                    pageUrl: { hostContains: `.${basename}` },
-                  }),
-                  new chrome.declarativeContent.PageStateMatcher({
-                    pageUrl: { hostContains: `${basename}` },
-                  }),
-                ],
-                actions: [new chrome.declarativeContent.ShowAction()],
-              };
-            });
-
-          chrome.declarativeContent.onPageChanged.addRules(rules);
-        }
-      );
-    }
-  );
-};
-
-function updateIcon(tabId, changeInfo, tab) {
-  if (!tab || !tab.url) return;
-  const basename = getUrlBase(tab.url);
-
-  chrome.storage.local.get(
-    ["blocklist"],
-    ({ blocklist: blocklistLocal = [] }) => {
-      const isBlocked = blocklistLocal.some(
-        (website) => website.enabled && website.basename === basename
-      );
-
-      const iconPath = isBlocked ? "128-gray.png" : "128.png";
-
-      chrome.action.setIcon({ tabId: tabId, path: iconPath });
-    }
-  );
-}
-
-// Listen for tab updates
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  updateIcon(tabId, changeInfo, tab);
-});
-
-// Listen for tab activation (when the user switches tabs)
-chrome.tabs.onActivated.addListener(({ tabId }) => {
-  chrome.tabs.get(tabId, (tab) => {
-    updateIcon(tabId, null, tab);
-  });
-});
-
-// Update the icon when the extension first loads
-chrome.tabs.query({}, (tabs) => {
-  tabs.forEach((tab) => {
-    updateIcon(tab.id, null, tab);
-  });
-});
-
-chrome.runtime.onInstalled.addListener(function () {
-  updateDeclarativeContent();
-  setBadgeBackgroundColor("#FF4F64");
-});
-
-// Load data when loading the app after browser reboot
-chrome.storage.local.get(["blocklist"], ({ blocklist: blocklistLocal }) => {
-  if (blocklistLocal) blocklist = [...blocklistLocal];
-  updateDeclarativeContent();
-});
-
-function updateListeners(blocklistLocal) {
-  if (!blocklistLocal) return;
-
-  blocklist = [...blocklistLocal];
-
-  if (IS_FIREFOX) {
-    // Firefox: Use webRequest API
-    const urls = blocklist.reduce((list, { enabled, scripts = [] }) => {
-      if (!enabled) return list;
-      const add = scripts
-        .filter(({ enabled }) => enabled)
-        .map(({ url }) => url);
-      return [...list, ...add];
-    }, []);
-
-    debug("addListener urls", urls);
-
-    chrome.webRequest.onBeforeRequest.removeListener(blockRequests);
-
-    if (!urls.length) return;
-
-    chrome.webRequest.onBeforeRequest.addListener(
-      blockRequests,
-      { urls: [...urls], types: ["xmlhttprequest", "script"] },
-      ["blocking"]
-    );
-  } else {
-    // Chrome: Update declarativeNetRequest rules
-    updateDynamicRules(blocklist);
-  }
-}
-
-// For Firefox webRequest blocking
-const blockRequests = function (details) {
-  const { tabId } = details;
-  const initiator =
-    details.initiator || details.originUrl || details.documentUrl;
-
-  const basename = initiator ? getUrlBase(initiator) : null;
-  const found =
-    blocklist.length &&
-    blocklist.find((website) => {
-      const blockScript = !!findScript(website.scripts, details.url);
-      return website.basename === basename && website.enabled && blockScript;
-    });
-
-  if (found) {
-    const script = findScript(found.scripts, details.url);
-    if (script) script.timesBlocked = (script.timesBlocked || 0) + 1;
-
-    chrome.storage.local.set({ blocklist: [...blocklist] });
-
-    // Update counter for the tabs
-    if (tabId) {
-      tabs = tabs || {};
-      const tabText = "" + tabId;
-      tabs[tabText] = (tabs[tabText] || 0) + 1;
-
-      updateBadgeText("" + tabs[tabId], tabId);
+    if (!basename) {
+      alert("Invalid website");
+      return;
     }
 
-    return { cancel: true };
-  }
-  return { cancel: false };
-};
+    // Prepare the permissions to request
+    const websites = [`*://*.${basename}/*`];
 
-// Act on store changes to save it to internal variables
-chrome.storage.onChanged.addListener(
-  ({ blocklist: storageblocklist }, areaName) => {
-    if (areaName !== "local") return;
-
-    // Update listeners when updating storage
-    updateListeners(storageblocklist.newValue);
-
-    // We only want to update the declarative content when some setting has changed
-    // not when the counter of timesBlocked it increased.
-    const oldValue = generateHash(storageblocklist.oldValue);
-    const newValue = generateHash(storageblocklist.newValue);
-
-    if (oldValue !== newValue) updateDeclarativeContent();
-  }
-);
-
-// Delete tab data when it gets closed
-chrome.tabs.onRemoved.addListener(function (tabId) {
-  if (tabs && tabs["" + tabId]) delete tabs["" + tabId];
-});
-
-const getUrlBase = (url) => {
-  if (!url) return {};
-  const { hostname } = new URL(url);
-  const parts = hostname.split(".");
-  let basename = parts.slice(-2).join(".");
-  if (tldsWithDots.indexOf(basename) > -1) basename = parts.slice(-3).join(".");
-  return basename;
-};
-
-const getFileUrl = (url) => {
-  if (!url) return false;
-  const { origin, pathname } = new URL(url);
-  return origin + pathname;
-};
-
-let waitingPermissions = {};
-
-const requestPermissionForUrl = (basename, basenames, tabId) =>
-  new Promise(() => {
-    const websites = basenames.map(({ basename }) => `*://*.${basename}/*`);
-
+    // Request permissions before any asynchronous operations
     chrome.permissions.request(
       {
-        origins: [...websites],
+        origins: websites,
       },
       function (granted) {
         if (chrome.runtime.lastError) {
-          if (
-            chrome.runtime.lastError.message ===
-            "permissions.request may only be called from a user input handler"
-          ) {
-            waitingPermissions[basename] = basenames;
-            safeAlert(
-              `Please give permission to your website by clicking the icon again`,
-              tabId
-            );
-          } else {
-            safeAlert(chrome.runtime.lastError.message, tabId);
-          }
-          return console.error(chrome.runtime.lastError.message);
+          alert(chrome.runtime.lastError.message);
+          console.error(chrome.runtime.lastError.message);
+          return;
         }
 
-        if (!granted)
-          return alert(
-            `Oops, no permission to skip your visits on ${basenames
-              .map(({ name }) => name)
-              .join(", ")}`
-          );
+        if (!granted) {
+          alert(`Oops, no permission to skip your visits on ${basename}`);
+          return;
+        }
 
-        // Make blocklist unique
-        const newBlocklist = [...blocklist, ...basenames].reduce(
-          (list, website) => {
-            if (list.find((site) => site.basename === website.basename))
-              return list;
-            else list.push(website);
-            return list;
+        // Now that permissions are granted, proceed with asynchronous operations
+        // Check for scripts on the page
+        chrome.scripting.executeScript(
+          {
+            target: { tabId: tab.id },
+            func: (basename) => {
+              const scripts = (document.scripts ? [...document.scripts] : [])
+                .map(({ src }) => src)
+                .filter(
+                  (item) =>
+                    item &&
+                    (item.includes(basename) ||
+                      item.includes("cdn.simpleanalytics.io") ||
+                      item.includes("scripts.simpleanalyticscdn.com"))
+                );
+              return scripts;
+            },
+            args: [basename],
           },
-          []
+          (injectionResults) => {
+            if (chrome.runtime.lastError) {
+              console.error(chrome.runtime.lastError.message);
+              return;
+            }
+            const scripts = injectionResults[0].result;
+            processScripts(scripts, basename, tab.id);
+          }
         );
-
-        if (basenames.length) debug("Added to the blocklist:", basenames);
-
-        chrome.storage.local.set({ blocklist: [...newBlocklist] });
-        updateListeners(newBlocklist);
       }
     );
   });
+});
 
-const checkForScripts = (basename, tabId) =>
-  new Promise((resolve, reject) => {
-    if (IS_FIREFOX) {
-      chrome.tabs.executeScript(
-        tabId,
-        {
-          code: `(document.scripts ? [...document.scripts] : []).map(({src}) => src).filter(item => item && (item.indexOf('${basename}') > -1 || item.indexOf('cdn.simpleanalytics.io') > -1 || item.indexOf('scripts.simpleanalyticscdn.com') > -1))`,
-        },
-        function ([scripts] = []) {
-          if (chrome.runtime.lastError)
-            return reject(chrome.runtime.lastError.message);
+function processScripts(scripts, basename, tabId) {
+  const basenames = [];
 
-          processScripts(scripts, basename, resolve);
-        }
-      );
-    } else {
-      chrome.scripting.executeScript(
-        {
-          target: { tabId },
-          func: (basename) => {
-            const scripts = (document.scripts ? [...document.scripts] : [])
-              .map(({ src }) => src)
-              .filter(
-                (item) =>
-                  item &&
-                  (item.indexOf(basename) > -1 ||
-                    item.indexOf("cdn.simpleanalytics.io") > -1 ||
-                    item.indexOf("scripts.simpleanalyticscdn.com") > -1)
-              );
-            return scripts;
-          },
-          args: [basename],
-        },
-        (injectionResults) => {
-          if (chrome.runtime.lastError) {
-            return reject(chrome.runtime.lastError.message);
-          }
-          const scripts = injectionResults[0].result;
-          processScripts(scripts, basename, resolve);
-        }
-      );
-    }
-  });
-
-function processScripts(scripts, basename, resolve) {
   const simpleAnalyticsScript = (scripts || []).find((item) => {
     const { hostname } = new URL(item);
     return [
@@ -417,31 +74,24 @@ function processScripts(scripts, basename, resolve) {
   });
 
   if (simpleAnalyticsScript) {
-    return resolve([
-      {
-        basename,
-        enabled: true,
-        scripts: [
-          {
-            url: simpleAnalyticsScript,
-            enabled: true,
-            timesBlocked: 0,
-          },
-        ],
-      },
-    ]);
-  }
-
-  // Filter scripts like /latest.js and /v2/app.js
-  const cleanScripts = (scripts || []).filter((item) => {
-    const { pathname } = new URL(item);
-    return /^(\/v[0-9]+)?\/(app|latest|e|events|light)\.js$/i.test(pathname);
-  });
-
-  // Add to URLS
-  if (cleanScripts.length > 0) {
-    resolve([
-      {
+    basenames.push({
+      basename,
+      enabled: true,
+      scripts: [
+        {
+          url: simpleAnalyticsScript,
+          enabled: true,
+          timesBlocked: 0,
+        },
+      ],
+    });
+  } else {
+    const cleanScripts = (scripts || []).filter((item) => {
+      const { pathname } = new URL(item);
+      return /^(\/v[0-9]+)?\/(app|latest|e|events|light)\.js$/i.test(pathname);
+    });
+    if (cleanScripts.length > 0) {
+      basenames.push({
         basename,
         enabled: true,
         scripts: cleanScripts.map((script) => ({
@@ -449,84 +99,42 @@ function processScripts(scripts, basename, resolve) {
           enabled: true,
           timesBlocked: 0,
         })),
-      },
-    ]);
-  } else {
-    resolve([{ basename, scripts: [] }]);
+      });
+    } else {
+      basenames.push({ basename, scripts: [] });
+    }
+  }
+
+  // Send a message to the service worker to update the blocklist
+  chrome.runtime.sendMessage(
+    { action: "updateBlocklist", basenames },
+    (response) => {
+      if (chrome.runtime.lastError) {
+        console.error(chrome.runtime.lastError.message);
+      } else {
+        alert("Your visits are now blocked on this site.");
+      }
+    }
+  );
+}
+
+function getUrlBase(url) {
+  try {
+    const { hostname } = new URL(url);
+    const parts = hostname.split(".");
+    let basename = parts.slice(-2).join(".");
+    if (tldsWithDots.includes(basename)) basename = parts.slice(-3).join(".");
+    return basename;
+  } catch (e) {
+    return null;
   }
 }
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.action === "updateBlocklist") {
-    const { basenames } = message;
-
-    // Update the blocklist
-    const newBlocklist = [...blocklist, ...basenames].reduce(
-      (list, website) => {
-        if (list.find((site) => site.basename === website.basename))
-          return list;
-        else list.push(website);
-        return list;
-      },
-      []
-    );
-
-    blocklist = newBlocklist;
-    chrome.storage.local.set({ blocklist: [...newBlocklist] });
-    updateListeners(newBlocklist);
-    sendResponse({ success: true });
-  }
-});
-
-chrome.action.onClicked.addListener(function (tab) {
-  const basename = getUrlBase(tab.url);
-
-  if (!basename) return safeAlert("Invalid website", tab.id);
-
-  // Fix to prevent the Firefox error "permissions.request may only be called from a user input handler"
-  if (
-    waitingPermissions &&
-    waitingPermissions[basename] &&
-    waitingPermissions[basename].length
-  )
-    return requestPermissionForUrl(
-      basename,
-      waitingPermissions[basename],
-      tab.id
-    );
-
-  return checkForScripts(basename, tab.id)
-    .then((scripts) => {
-      debug("detected these scripts:", scripts);
-      requestPermissionForUrl(basename, scripts, tab.id).catch(console.error);
-    })
-    .catch(console.error);
-});
-
-// When the extension loads again (after a browser restart)
-// make sure to load the scripts from storage
-chrome.storage.local.get(
-  ["blocklist"],
-  ({ blocklist: blocklistStorage = [] }) => {
-    debug("initialization blocklist", blocklistStorage);
-
-    if (blocklistStorage.length) updateListeners(blocklistStorage);
-    else updateListeners(blocklist);
-  }
-);
-
-const generateHash = (object) => {
-  if (!object) return null;
-  return object
-    .map(({ basename, enabled, scripts = [] }) => {
-      return (
-        basename +
-        enabled +
-        scripts.map(({ url, enabled }) => url + enabled).join("_")
-      );
-    })
-    .join("_");
-};
+function getFileUrl(url) {
+  if (!url) return false;
+  const { origin, pathname } = new URL(url);
+  return origin + pathname;
+}
 
 // Very long list with all TLDs that have a dot in them
 const tldsWithDots = [

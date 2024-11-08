@@ -1,27 +1,13 @@
 {
-  "name": "Simple Analytics",
-  "description": "Block your visits so they don't count towards your stats in Simple Analytics",
+  "name": "Simple Analytics Extension",
+  "description": "An extension to block your own visits from Simple Analytics.",
+  "version": "1.8",
   "manifest_version": 2,
-  "options_ui": {
-    "page": "options.html"
-  },
-  "background": {
-    "scripts": ["background.js"],
-    "persistent": true
-  },
   "icons": {
     "128": "128.png"
   },
-  "browser_action": {
-    "default_title": "Simple Analytics"
-  },
-  "optional_permissions": ["<all_urls>"],
-  "permissions": [
-    "*://*.simpleanalytics.io/*",
-    "*://*.simpleanalyticscdn.com/*",
-    "webRequest",
-    "webRequestBlocking",
-    "storage",
-    "activeTab"
-  ]
+  "permissions": ["storage"],
+  "options_ui": {
+    "page": "options.html"
+  }
 }
