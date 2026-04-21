@@ -4,9 +4,14 @@
 let blocklist = [];
 let tabs = {};
 
-// Detect if the extension is running in Firefox
+// Detect if the extension is running in Firefox.
+// Chrome (MV3) exposes `chrome.declarativeNetRequest` but no blocking
+// `chrome.webRequest`. Recent Chrome versions also expose a `browser` global,
+// so we can't rely on that. Feature-detect the APIs we actually need instead.
 const IS_FIREFOX =
-  typeof browser !== "undefined" && typeof browser.runtime !== "undefined";
+  typeof chrome.declarativeNetRequest === "undefined" &&
+  typeof chrome.webRequest !== "undefined" &&
+  typeof chrome.webRequest.onBeforeRequest !== "undefined";
 const DEBUG = false;
 
 const debug = (...messages) => {
@@ -214,6 +219,13 @@ function updateListeners(blocklistLocal) {
 
   if (IS_FIREFOX) {
     // Firefox: Use webRequest API
+    if (!chrome.webRequest || !chrome.webRequest.onBeforeRequest) {
+      console.warn(
+        "chrome.webRequest.onBeforeRequest is not available; skipping listener update."
+      );
+      return;
+    }
+
     const urls = blocklist.reduce((list, { enabled, scripts = [] }) => {
       if (!enabled) return list;
       const add = scripts
