@@ -2,7 +2,6 @@
 /* globals chrome */
 
 let blocklist = [];
-let tabs = {};
 
 // Detect if the extension is running in Firefox.
 // Chrome (MV3) exposes `chrome.declarativeNetRequest` but no blocking
@@ -58,27 +57,17 @@ const warn = (message, tabId) => {
   }
 };
 
+// Stored script URLs are normalized to origin+pathname (no query). Match
+// requests as either an exact match or a prefix followed by `?` or `#` so
+// proxy endpoints like `*/simple.gif?version=...` are caught too.
 const findScript = (scripts, url) =>
-  scripts.find((script) => script.enabled && url === script.url);
-
-// Update the badge text
-const updateBadgeText = (text, tabId) => {
-  if (IS_FIREFOX) {
-    chrome.browserAction.setBadgeText({ text: text, tabId });
-    chrome.browserAction.setBadgeTextColor({ color: "white" });
-  } else {
-    chrome.action.setBadgeText({ text: text, tabId });
-  }
-};
-
-// Set the badge background color
-const setBadgeBackgroundColor = (color) => {
-  if (IS_FIREFOX) {
-    chrome.browserAction.setBadgeBackgroundColor({ color });
-  } else {
-    chrome.action.setBadgeBackgroundColor({ color });
-  }
-};
+  scripts.find((script) => {
+    if (!script.enabled) return false;
+    if (url === script.url) return true;
+    return (
+      url.startsWith(`${script.url}?`) || url.startsWith(`${script.url}#`)
+    );
+  });
 
 // Replace webRequest blocking with declarativeNetRequest in Chrome
 function updateDynamicRules(blocklistLocal) {
@@ -86,12 +75,15 @@ function updateDynamicRules(blocklistLocal) {
 
   const rules = [];
   let ruleId = 1;
+  const seen = new Set();
 
   blocklistLocal.forEach((website) => {
     if (!website.enabled) return;
 
     website.scripts.forEach((script) => {
-      if (!script.enabled) return;
+      if (!script.enabled || !script.url) return;
+      if (seen.has(script.url)) return;
+      seen.add(script.url);
 
       rules.push({
         id: ruleId++,
@@ -99,7 +91,7 @@ function updateDynamicRules(blocklistLocal) {
         action: { type: "block" },
         condition: {
           urlFilter: script.url,
-          resourceTypes: ["xmlhttprequest", "script"],
+          resourceTypes: ["xmlhttprequest", "script", "image"],
         },
       });
     });
@@ -115,10 +107,12 @@ function updateDynamicRules(blocklistLocal) {
         addRules: rules,
       },
       () => {
-        if (chrome.runtime.lastError) {
+        const err = chrome.runtime.lastError;
+        if (err) {
           console.error(
             "Error updating dynamic rules:",
-            chrome.runtime.lastError
+            err.message || err,
+            { addRules: rules, removeRuleIds: existingRuleIds }
           );
         }
       }
@@ -177,7 +171,11 @@ function updateIcon(tabId, changeInfo, tab) {
 
       const iconPath = isBlocked ? "128-gray.png" : "128.png";
 
-      chrome.action.setIcon({ tabId: tabId, path: iconPath });
+      // The tab can be closed between the storage read and this call; swallow
+      // the resulting "No tab with id ..." runtime error.
+      chrome.action.setIcon({ tabId, path: iconPath }, () => {
+        void chrome.runtime.lastError;
+      });
     }
   );
 }
@@ -190,6 +188,8 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 // Listen for tab activation (when the user switches tabs)
 chrome.tabs.onActivated.addListener(({ tabId }) => {
   chrome.tabs.get(tabId, (tab) => {
+    // Tab may already be gone (rapid switch/close); ignore.
+    if (chrome.runtime.lastError || !tab) return;
     updateIcon(tabId, null, tab);
   });
 });
@@ -203,7 +203,6 @@ chrome.tabs.query({}, (tabs) => {
 
 chrome.runtime.onInstalled.addListener(function () {
   updateDeclarativeContent();
-  setBadgeBackgroundColor("#FF4F64");
 });
 
 // Load data when loading the app after browser reboot
@@ -226,11 +225,13 @@ function updateListeners(blocklistLocal) {
       return;
     }
 
+    // Append `*` so match patterns also cover query strings (e.g. proxy
+    // beacons like `.../simple.gif?version=...`).
     const urls = blocklist.reduce((list, { enabled, scripts = [] }) => {
       if (!enabled) return list;
       const add = scripts
         .filter(({ enabled }) => enabled)
-        .map(({ url }) => url);
+        .map(({ url }) => `${url}*`);
       return [...list, ...add];
     }, []);
 
@@ -242,7 +243,7 @@ function updateListeners(blocklistLocal) {
 
     chrome.webRequest.onBeforeRequest.addListener(
       blockRequests,
-      { urls: [...urls], types: ["xmlhttprequest", "script"] },
+      { urls: [...urls], types: ["xmlhttprequest", "script", "image"] },
       ["blocking"]
     );
   } else {
@@ -253,7 +254,6 @@ function updateListeners(blocklistLocal) {
 
 // For Firefox webRequest blocking
 const blockRequests = function (details) {
-  const { tabId } = details;
   const initiator =
     details.initiator || details.originUrl || details.documentUrl;
 
@@ -265,24 +265,7 @@ const blockRequests = function (details) {
       return website.basename === basename && website.enabled && blockScript;
     });
 
-  if (found) {
-    const script = findScript(found.scripts, details.url);
-    if (script) script.timesBlocked = (script.timesBlocked || 0) + 1;
-
-    chrome.storage.local.set({ blocklist: [...blocklist] });
-
-    // Update counter for the tabs
-    if (tabId) {
-      tabs = tabs || {};
-      const tabText = "" + tabId;
-      tabs[tabText] = (tabs[tabText] || 0) + 1;
-
-      updateBadgeText("" + tabs[tabId], tabId);
-    }
-
-    return { cancel: true };
-  }
-  return { cancel: false };
+  return { cancel: !!found };
 };
 
 // Act on store changes to save it to internal variables
@@ -290,22 +273,10 @@ chrome.storage.onChanged.addListener(
   ({ blocklist: storageblocklist }, areaName) => {
     if (areaName !== "local") return;
 
-    // Update listeners when updating storage
     updateListeners(storageblocklist.newValue);
-
-    // We only want to update the declarative content when some setting has changed
-    // not when the counter of timesBlocked it increased.
-    const oldValue = generateHash(storageblocklist.oldValue);
-    const newValue = generateHash(storageblocklist.newValue);
-
-    if (oldValue !== newValue) updateDeclarativeContent();
+    updateDeclarativeContent();
   }
 );
-
-// Delete tab data when it gets closed
-chrome.tabs.onRemoved.addListener(function (tabId) {
-  if (tabs && tabs["" + tabId]) delete tabs["" + tabId];
-});
 
 const getUrlBase = (url) => {
   if (!url) return {};
@@ -314,12 +285,6 @@ const getUrlBase = (url) => {
   let basename = parts.slice(-2).join(".");
   if (tldsWithDots.indexOf(basename) > -1) basename = parts.slice(-3).join(".");
   return basename;
-};
-
-const getFileUrl = (url) => {
-  if (!url) return false;
-  const { origin, pathname } = new URL(url);
-  return origin + pathname;
 };
 
 let waitingPermissions = {};
@@ -369,20 +334,87 @@ const requestPermissionForUrl = (basename, basenames, tabId) =>
 
         if (basenames.length) debug("Added to the blocklist:", basenames);
 
+        // Just persist; the storage.onChanged listener handles updating the
+        // webRequest/DNR listeners and declarative content, so we don't want
+        // to call updateListeners directly (avoids a DNR race that can throw
+        // "Rule with id X does not have a unique ID").
         chrome.storage.local.set({ blocklist: [...newBlocklist] });
-        updateListeners(newBlocklist);
       }
     );
   });
+
+// Detects Simple Analytics on a page. Returns a list of normalized URLs
+// (origin + pathname, no query) to block. Catches:
+//  - direct Simple Analytics CDN scripts
+//  - well-known Simple Analytics paths on the site's own domain
+//  - proxy event beacons to `*/simple.gif`
+//  - proxy scripts (any same-origin .js whose body starts with
+//    `/* Simple Analytics`)
+const DETECT_SCRIPT = `(async () => {
+  const BASENAME = "__BASENAME__";
+  const origin = location.origin;
+  const allScripts = (document.scripts ? [...document.scripts] : [])
+    .map(function (s) { return s.src; })
+    .filter(Boolean);
+
+  const urls = new Set();
+
+  allScripts.forEach(function (src) {
+    try {
+      const h = new URL(src).hostname;
+      if (h === "cdn.simpleanalytics.io" || h === "scripts.simpleanalyticscdn.com") {
+        const u = new URL(src);
+        urls.add(u.origin + u.pathname);
+      }
+    } catch (e) {}
+  });
+
+  allScripts.forEach(function (src) {
+    try {
+      const u = new URL(src);
+      if (u.hostname.endsWith(BASENAME) &&
+        /^(\\/v[0-9]+)?\\/(app|latest|e|events|light)\\.js$/i.test(u.pathname)) {
+        urls.add(u.origin + u.pathname);
+      }
+    } catch (e) {}
+  });
+
+  (performance.getEntriesByType("resource") || []).forEach(function (entry) {
+    if (/\\/simple\\.gif(\\?|$)/i.test(entry.name)) {
+      try {
+        const u = new URL(entry.name);
+        urls.add(u.origin + u.pathname);
+      } catch (e) {}
+    }
+  });
+
+  const sameOriginJs = allScripts.filter(function (src) {
+    try {
+      const u = new URL(src);
+      return u.origin === origin && /\\.js(\\?|$)/i.test(u.pathname);
+    } catch (e) { return false; }
+  });
+  await Promise.all(sameOriginJs.map(async function (src) {
+    try {
+      const res = await fetch(src, { credentials: "omit" });
+      if (!res.ok) return;
+      const head = (await res.text()).slice(0, 64).trimStart();
+      if (head.startsWith("/* Simple Analytics")) {
+        const u = new URL(src);
+        urls.add(u.origin + u.pathname);
+      }
+    } catch (e) {}
+  }));
+
+  return [...urls];
+})()`;
 
 const checkForScripts = (basename, tabId) =>
   new Promise((resolve, reject) => {
     if (IS_FIREFOX) {
       chrome.tabs.executeScript(
         tabId,
-        {
-          code: `(document.scripts ? [...document.scripts] : []).map(({src}) => src).filter(item => item && (item.indexOf('${basename}') > -1 || item.indexOf('cdn.simpleanalytics.io') > -1 || item.indexOf('scripts.simpleanalyticscdn.com') > -1))`,
-        },
+        { code: DETECT_SCRIPT.replace("__BASENAME__", basename) },
         function ([scripts] = []) {
           if (chrome.runtime.lastError)
             return reject(chrome.runtime.lastError.message);
@@ -394,25 +426,83 @@ const checkForScripts = (basename, tabId) =>
       chrome.scripting.executeScript(
         {
           target: { tabId },
-          func: (basename) => {
-            const scripts = (document.scripts ? [...document.scripts] : [])
+          func: async (basename) => {
+            const origin = location.origin;
+            const allScripts = (document.scripts ? [...document.scripts] : [])
               .map(({ src }) => src)
-              .filter(
-                (item) =>
-                  item &&
-                  (item.indexOf(basename) > -1 ||
-                    item.indexOf("cdn.simpleanalytics.io") > -1 ||
-                    item.indexOf("scripts.simpleanalyticscdn.com") > -1)
-              );
-            return scripts;
+              .filter(Boolean);
+            const urls = new Set();
+
+            allScripts.forEach((src) => {
+              try {
+                const h = new URL(src).hostname;
+                if (
+                  h === "cdn.simpleanalytics.io" ||
+                  h === "scripts.simpleanalyticscdn.com"
+                ) {
+                  const u = new URL(src);
+                  urls.add(u.origin + u.pathname);
+                }
+              } catch (e) {}
+            });
+
+            allScripts.forEach((src) => {
+              try {
+                const u = new URL(src);
+                if (
+                  u.hostname.endsWith(basename) &&
+                  /^(\/v[0-9]+)?\/(app|latest|e|events|light)\.js$/i.test(
+                    u.pathname
+                  )
+                )
+                  urls.add(u.origin + u.pathname);
+              } catch (e) {}
+            });
+
+            (performance.getEntriesByType("resource") || []).forEach(
+              (entry) => {
+                if (/\/simple\.gif(\?|$)/i.test(entry.name)) {
+                  try {
+                    const u = new URL(entry.name);
+                    urls.add(u.origin + u.pathname);
+                  } catch (e) {}
+                }
+              }
+            );
+
+            const sameOriginJs = allScripts.filter((src) => {
+              try {
+                const u = new URL(src);
+                return (
+                  u.origin === origin && /\.js(\?|$)/i.test(u.pathname)
+                );
+              } catch (e) {
+                return false;
+              }
+            });
+            await Promise.all(
+              sameOriginJs.map(async (src) => {
+                try {
+                  const res = await fetch(src, { credentials: "omit" });
+                  if (!res.ok) return;
+                  const head = (await res.text()).slice(0, 64).trimStart();
+                  if (head.startsWith("/* Simple Analytics")) {
+                    const u = new URL(src);
+                    urls.add(u.origin + u.pathname);
+                  }
+                } catch (e) {}
+              })
+            );
+
+            return [...urls];
           },
           args: [basename],
         },
         (injectionResults) => {
-          if (chrome.runtime.lastError) {
+          if (chrome.runtime.lastError)
             return reject(chrome.runtime.lastError.message);
-          }
-          const scripts = injectionResults[0].result;
+
+          const scripts = (injectionResults && injectionResults[0].result) || [];
           processScripts(scripts, basename, resolve);
         }
       );
@@ -420,52 +510,17 @@ const checkForScripts = (basename, tabId) =>
   });
 
 function processScripts(scripts, basename, resolve) {
-  const simpleAnalyticsScript = (scripts || []).find((item) => {
-    const { hostname } = new URL(item);
-    return [
-      "cdn.simpleanalytics.io",
-      "scripts.simpleanalyticscdn.com",
-    ].includes(hostname);
-  });
+  const detected = [...new Set((scripts || []).filter(Boolean))];
 
-  if (simpleAnalyticsScript) {
-    return resolve([
-      {
-        basename,
-        enabled: true,
-        scripts: [
-          {
-            url: simpleAnalyticsScript,
-            enabled: true,
-            timesBlocked: 0,
-          },
-        ],
-      },
-    ]);
-  }
+  if (detected.length === 0) return resolve([{ basename, scripts: [] }]);
 
-  // Filter scripts like /latest.js and /v2/app.js
-  const cleanScripts = (scripts || []).filter((item) => {
-    const { pathname } = new URL(item);
-    return /^(\/v[0-9]+)?\/(app|latest|e|events|light)\.js$/i.test(pathname);
-  });
-
-  // Add to URLS
-  if (cleanScripts.length > 0) {
-    resolve([
-      {
-        basename,
-        enabled: true,
-        scripts: cleanScripts.map((script) => ({
-          url: getFileUrl(script),
-          enabled: true,
-          timesBlocked: 0,
-        })),
-      },
-    ]);
-  } else {
-    resolve([{ basename, scripts: [] }]);
-  }
+  resolve([
+    {
+      basename,
+      enabled: true,
+      scripts: detected.map((url) => ({ url, enabled: true })),
+    },
+  ]);
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -484,8 +539,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     );
 
     blocklist = newBlocklist;
+    // Persist only; storage.onChanged drives updateListeners +
+    // updateDeclarativeContent. Calling them here too races against the
+    // storage event and causes DNR "unique ID" errors on rapid updates.
     chrome.storage.local.set({ blocklist: [...newBlocklist] });
-    updateListeners(newBlocklist);
     sendResponse({ success: true });
   }
 });
@@ -526,19 +583,6 @@ chrome.storage.local.get(
     else updateListeners(blocklist);
   }
 );
-
-const generateHash = (object) => {
-  if (!object) return null;
-  return object
-    .map(({ basename, enabled, scripts = [] }) => {
-      return (
-        basename +
-        enabled +
-        scripts.map(({ url, enabled }) => url + enabled).join("_")
-      );
-    })
-    .join("_");
-};
 
 // Very long list with all TLDs that have a dot in them
 const tldsWithDots = [

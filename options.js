@@ -36,7 +36,6 @@ chrome.storage.local.get(["blocklist"], ({ blocklist: blocklistLocal }) => {
         script.enabled ? "checked" : ""
       } data-website="${basename}" data-script="${script.url}">
             <span class="checkmark"></span> ${scriptName}
-            <small><em>(${parseInt(script.timesBlocked, 10)}x)</em></small>
           </label>
         </li>`);
     }

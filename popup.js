@@ -30,21 +30,90 @@ document.getElementById("block-button").addEventListener("click", () => {
         }
 
         // Now that permissions are granted, proceed with asynchronous operations
-        // Check for scripts on the page
+        // Detect Simple Analytics scripts AND proxy installations on the page.
         chrome.scripting.executeScript(
           {
             target: { tabId: tab.id },
-            func: (basename) => {
-              const scripts = (document.scripts ? [...document.scripts] : [])
+            func: async (basename) => {
+              const origin = location.origin;
+              const allScripts = (
+                document.scripts ? [...document.scripts] : []
+              )
                 .map(({ src }) => src)
-                .filter(
-                  (item) =>
-                    item &&
-                    (item.includes(basename) ||
-                      item.includes("cdn.simpleanalytics.io") ||
-                      item.includes("scripts.simpleanalyticscdn.com"))
-                );
-              return scripts;
+                .filter(Boolean);
+
+              const urls = new Set();
+
+              // 1. Direct Simple Analytics CDN scripts
+              allScripts.forEach((src) => {
+                try {
+                  const h = new URL(src).hostname;
+                  if (
+                    h === "cdn.simpleanalytics.io" ||
+                    h === "scripts.simpleanalyticscdn.com"
+                  ) {
+                    const u = new URL(src);
+                    urls.add(u.origin + u.pathname);
+                  }
+                } catch (e) {}
+              });
+
+              // 2. Scripts that look like Simple Analytics on the current domain
+              //    (e.g. /latest.js, /v2/app.js)
+              allScripts.forEach((src) => {
+                try {
+                  const u = new URL(src);
+                  if (
+                    u.hostname.endsWith(basename) &&
+                    /^(\/v[0-9]+)?\/(app|latest|e|events|light)\.js$/i.test(
+                      u.pathname
+                    )
+                  ) {
+                    urls.add(u.origin + u.pathname);
+                  }
+                } catch (e) {}
+              });
+
+              // 3. Proxy event endpoint: any resource request to `*/simple.gif`
+              (performance.getEntriesByType("resource") || []).forEach(
+                (entry) => {
+                  if (/\/simple\.gif(\?|$)/i.test(entry.name)) {
+                    try {
+                      const u = new URL(entry.name);
+                      urls.add(u.origin + u.pathname);
+                    } catch (e) {}
+                  }
+                }
+              );
+
+              // 4. Proxy script: same-origin .js whose body starts with
+              //    `/* Simple Analytics`. Used so future page loads that haven't
+              //    fired the beacon yet are still blocked at the script level.
+              const sameOriginJs = allScripts.filter((src) => {
+                try {
+                  const u = new URL(src);
+                  return (
+                    u.origin === origin && /\.js(\?|$)/i.test(u.pathname)
+                  );
+                } catch (e) {
+                  return false;
+                }
+              });
+              await Promise.all(
+                sameOriginJs.map(async (src) => {
+                  try {
+                    const res = await fetch(src, { credentials: "omit" });
+                    if (!res.ok) return;
+                    const head = (await res.text()).slice(0, 64).trimStart();
+                    if (head.startsWith("/* Simple Analytics")) {
+                      const u = new URL(src);
+                      urls.add(u.origin + u.pathname);
+                    }
+                  } catch (e) {}
+                })
+              );
+
+              return [...urls];
             },
             args: [basename],
           },
@@ -53,7 +122,7 @@ document.getElementById("block-button").addEventListener("click", () => {
               console.error(chrome.runtime.lastError.message);
               return;
             }
-            const scripts = injectionResults[0].result;
+            const scripts = injectionResults[0].result || [];
             processScripts(scripts, basename, tab.id);
           }
         );
@@ -63,47 +132,17 @@ document.getElementById("block-button").addEventListener("click", () => {
 });
 
 function processScripts(scripts, basename, tabId) {
-  const basenames = [];
+  const detected = [...new Set((scripts || []).filter(Boolean))];
 
-  const simpleAnalyticsScript = (scripts || []).find((item) => {
-    const { hostname } = new URL(item);
-    return [
-      "cdn.simpleanalytics.io",
-      "scripts.simpleanalyticscdn.com",
-    ].includes(hostname);
-  });
-
-  if (simpleAnalyticsScript) {
-    basenames.push({
-      basename,
-      enabled: true,
-      scripts: [
-        {
-          url: simpleAnalyticsScript,
+  const basenames = [
+    detected.length > 0
+      ? {
+          basename,
           enabled: true,
-          timesBlocked: 0,
-        },
-      ],
-    });
-  } else {
-    const cleanScripts = (scripts || []).filter((item) => {
-      const { pathname } = new URL(item);
-      return /^(\/v[0-9]+)?\/(app|latest|e|events|light)\.js$/i.test(pathname);
-    });
-    if (cleanScripts.length > 0) {
-      basenames.push({
-        basename,
-        enabled: true,
-        scripts: cleanScripts.map((script) => ({
-          url: getFileUrl(script),
-          enabled: true,
-          timesBlocked: 0,
-        })),
-      });
-    } else {
-      basenames.push({ basename, scripts: [] });
-    }
-  }
+          scripts: detected.map((url) => ({ url, enabled: true })),
+        }
+      : { basename, scripts: [] },
+  ];
 
   // Send a message to the service worker to update the blocklist
   chrome.runtime.sendMessage(
@@ -128,12 +167,6 @@ function getUrlBase(url) {
   } catch (e) {
     return null;
   }
-}
-
-function getFileUrl(url) {
-  if (!url) return false;
-  const { origin, pathname } = new URL(url);
-  return origin + pathname;
 }
 
 // Very long list with all TLDs that have a dot in them

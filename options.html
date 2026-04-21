@@ -1,25 +1,39 @@
 <html>
   <style>
     :root {
-      --background-color: transparent;
+      --background-color: #eef9ff;
+      --surface-color: #ffffff;
+      --text-color: #3e3e3e;
+      --heading-color: #1f1f1f;
+      --accent-color: #FF4F64;
+      --link-color: #00C5E5;
+      --border-color: #a7b8bb;
       --font-family: Roboto, system-ui, sans-serif;
       --declarative-content-display: unset;
-      --font-size-body: 13px;
-      --font-size-heading: 13px;
+      --font-size-body: 14px;
+      --font-size-heading: 16px;
       --font-weight-body: normal;
-      --font-weight-heading: 500;
-      --margin-top: 0;
+      --font-weight-heading: 600;
+      --margin-top: 2rem;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --background-color: #2a3638;
+        --surface-color: #1f292b;
+        --text-color: #bbd2d5;
+        --heading-color: #e7eef0;
+        --accent-color: #FF4F64;
+        --link-color: #2ec6df;
+        --border-color: #486164;
+      }
     }
     @supports (-moz-appearance: none) {
       :root {
         --font-family: inherit;
         --declarative-content-display: none;
-        --font-size-body: 14px;
-        --font-size-heading: 16px;
         --font-weight-body: 400;
-        --font-weight-heading: 600;
         --line-height-heading: 22px;
-        --margin-top: 1rem;
       }
     }
     body, html {
@@ -43,7 +57,7 @@
       box-sizing: border-box;
     }
     h1, h2, h3, h4 {
-      color: #1f1f1f;
+      color: var(--heading-color);
       margin: 1rem 0 0.6rem 0;
       font-size: var(--font-size-heading);
       font-weight: var(--font-weight-heading);
@@ -53,22 +67,34 @@
       margin-top: -0.5rem;
     }
     p, button, .button, label, input[type="email"], input[type="text"], li, td, th {
-      color: #3e3e3e;
+      color: var(--text-color);
     }
     p strong, li strong {
-      color: #415659;
+      color: var(--heading-color);
     }
     a {
-      color: #00C5E5;
+      color: var(--link-color);
     }
 
     /* Layouts */
+    .logo {
+      display: block;
+      margin: 0 auto 1rem auto;
+      fill: var(--accent-color);
+      height: 28px;
+      width: auto;
+    }
+
     main {
       flex: 0 0 auto;
-      background: white;
+      background: var(--surface-color);
       border-radius: 20px;
       margin: 0 1rem 1rem 1rem;
       margin-top: var(--margin-top, 1rem);
+      padding: 1.5rem 2rem;
+      width: 100%;
+      max-width: 640px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
     }
 
     main > *:first-child {
@@ -176,14 +202,14 @@
 </html>
 <body>
   <main>
-      <p>Awesome you're using our <span data-extension-text>extension</span>. We made it as simple as possible to block your own requests. Click the Simple Analytics <span data-extension-text>extension</span> icon to disable your visits on your websites.</p>
+      <svg class="logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000" role="img" aria-label="Simple Analytics"><path d="M54 538h154v462H54zm369-276h154v738H423zM792 0h154v1000H792z"></path></svg>
 
-      <p data-declarative-content>If the icon is gray it will not record your visits and shows the amount of requests blocked in that tab.</p>
+      <p>Awesome you're using our <span data-extension-text>extension</span>. We made it as simple as possible to block your own visits. Click the Simple Analytics <span data-extension-text>extension</span> icon on any site you want to stop tracking your own visits on.</p>
 
-      <p>The icon will show a badge with a count of the amount of visits it blocked in the current session. Below you'll find a list of total visits being blocked.</p>
+      <p data-declarative-content>When the icon is gray, your visits are being blocked on that site. When it's red, they're not.</p>
 
       <h2>Websites where you are invisible</h2>
-      <p>Behind the websites you also see the amount of visits it blocked. None of this information is send to any server.</p>
+      <p>Below is the list of websites where your visits are being blocked. None of this information is sent to any server.</p>
       <ul class="websites" style="display: none;"></ul>
   </main>
 
