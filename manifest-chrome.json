@@ -17,7 +17,7 @@
     "declarativeNetRequest",
     "declarativeNetRequestWithHostAccess"
   ],
-  "host_permissions": ["<all_urls>"],
+  "optional_host_permissions": ["*://*/*"],
   "options_ui": {
     "page": "options.html",
     "open_in_tab": true
