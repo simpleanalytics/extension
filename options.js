@@ -96,3 +96,96 @@ if (IS_FIREFOX) {
     textElement.textContent = "add-on";
   });
 }
+
+// Migration banner: after an update that dropped baked-in host access,
+// show users the list of previously-blocked sites that now need permission.
+(function renderMigrationBanner() {
+  const banner = document.getElementById("migration-banner");
+  const list = document.getElementById("migration-list");
+  if (!banner || !list) return;
+
+  chrome.storage.local.get(
+    ["migrationNeeded", "blocklist"],
+    ({ migrationNeeded, blocklist: blocklistLocal = [] }) => {
+      const savedBasenames = (blocklistLocal || [])
+        .filter((s) => s && s.basename)
+        .map((s) => s.basename);
+      if (!savedBasenames.length) return clearMigrationFlag();
+
+      chrome.permissions.getAll((perms) => {
+        const granted = new Set((perms && perms.origins) || []);
+        const missing = savedBasenames.filter((b) => {
+          return !granted.has(`*://*.${b}/*`) && !granted.has("<all_urls>");
+        });
+
+        if (!missing.length) return clearMigrationFlag();
+
+        renderList(missing);
+        banner.hidden = false;
+      });
+    }
+  );
+
+  function renderList(basenames) {
+    list.innerHTML = "";
+    basenames.forEach((basename) => {
+      const safe = basename.replace(/[^a-z0-9.-]+/gi, "");
+      const li = document.createElement("li");
+      li.dataset.basename = basename;
+      li.innerHTML = `
+        <span class="site">${safe}</span>
+        <button class="button" data-basename="${safe}">Re-enable</button>
+      `;
+      list.appendChild(li);
+    });
+
+    list.querySelectorAll("button.button").forEach((btn) => {
+      btn.addEventListener("click", () => handleReEnable(btn));
+    });
+  }
+
+  function handleReEnable(btn) {
+    const basename = btn.getAttribute("data-basename");
+    if (!basename) return;
+
+    btn.disabled = true;
+    btn.textContent = "Requesting…";
+
+    chrome.permissions.request(
+      { origins: [`*://*.${basename}/*`] },
+      (granted) => {
+        if (chrome.runtime.lastError) {
+          btn.disabled = false;
+          btn.textContent = "Re-enable";
+          console.error(chrome.runtime.lastError.message);
+          return;
+        }
+
+        if (!granted) {
+          btn.disabled = false;
+          btn.textContent = "Re-enable";
+          return;
+        }
+
+        const li = btn.closest("li");
+        if (li) {
+          li.innerHTML = `
+            <span class="site">${basename}</span>
+            <span class="status">Re-enabled</span>
+          `;
+        }
+
+        // If nothing is left to migrate, clear the flag and hide the banner.
+        const remaining = list.querySelectorAll("button.button").length;
+        if (remaining === 0) {
+          clearMigrationFlag();
+          banner.hidden = true;
+        }
+      }
+    );
+  }
+
+  function clearMigrationFlag() {
+    chrome.storage.local.remove("migrationNeeded");
+  }
+})();

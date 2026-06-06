@@ -192,17 +192,75 @@
       background-color: #FF4F64;
       border-radius: 3px;
       color: white;
+      cursor: pointer;
+    }
+    .button:hover { opacity: 0.9; }
+    .button[disabled] {
+      opacity: 0.6;
+      cursor: default;
     }
 
     label.label {
       font-size: 12px;
       display: block;
     }
+
+    .migration-banner {
+      background: #fff6f7;
+      border: 1px solid #ffc9d0;
+      border-left: 4px solid var(--accent-color);
+      border-radius: 8px;
+      padding: 1rem 1.2rem;
+      margin-bottom: 1rem;
+    }
+    @media (prefers-color-scheme: dark) {
+      .migration-banner {
+        background: #3a2a2d;
+        border-color: #703040;
+      }
+    }
+    .migration-banner h3 {
+      margin: 0 0 0.25rem 0;
+      color: var(--heading-color);
+    }
+    .migration-banner p {
+      margin: 0 0 0.6rem 0;
+    }
+    .migration-banner ul {
+      list-style: none;
+      margin: 0.5rem 0 0 0;
+      padding: 0;
+      display: block;
+    }
+    .migration-banner li {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      padding: 0.35rem 0;
+      border-top: 1px solid var(--border-color);
+    }
+    .migration-banner li:first-child { border-top: 0; }
+    .migration-banner li .site {
+      word-break: break-all;
+      flex: 1 1 auto;
+    }
+    .migration-banner li .status {
+      font-size: 12px;
+      color: var(--text-color);
+      opacity: 0.7;
+    }
   </style>
 </html>
 <body>
   <main>
       <svg class="logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000" role="img" aria-label="Simple Analytics"><path d="M54 538h154v462H54zm369-276h154v738H423zM792 0h154v1000H792z"></path></svg>
+
+      <div class="migration-banner" id="migration-banner" hidden>
+        <h3>Action needed: re-enable your sites</h3>
+        <p>The <span data-extension-text>extension</span> now only asks for access to sites you explicitly choose. Previously-blocked sites lost their access during the update, click <strong>Re-enable</strong> next to each one to restore blocking.</p>
+        <ul id="migration-list"></ul>
+      </div>
 
       <p>Awesome you're using our <span data-extension-text>extension</span>. We made it as simple as possible to block your own visits. Click the Simple Analytics <span data-extension-text>extension</span> icon on any site you want to stop tracking your own visits on.</p>
 

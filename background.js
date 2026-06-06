@@ -201,9 +201,43 @@ chrome.tabs.query({}, (tabs) => {
   });
 });
 
-chrome.runtime.onInstalled.addListener(function () {
+chrome.runtime.onInstalled.addListener(function (details) {
   updateDeclarativeContent();
+
+  // On upgrade we may have lost host permissions (e.g. after migrating away
+  // from `<all_urls>` to per-site optional host permissions). If there are
+  // previously-blocked sites that no longer have host access, open the
+  // options page so the user can re-grant them in one click.
+  if (details && details.reason === "update") checkMigrationNeeded();
 });
+
+function checkMigrationNeeded() {
+  chrome.storage.local.get(
+    ["blocklist"],
+    ({ blocklist: blocklistLocal = [] }) => {
+      const basenames = (blocklistLocal || [])
+        .filter((site) => site && site.basename)
+        .map((site) => site.basename);
+      if (!basenames.length) return;
+
+      chrome.permissions.getAll((perms) => {
+        const granted = new Set((perms && perms.origins) || []);
+        const missing = basenames.filter((basename) => {
+          const pattern = `*://*.${basename}/*`;
+          return !granted.has(pattern) && !granted.has("<all_urls>");
+        });
+        if (!missing.length) return;
+
+        chrome.storage.local.set(
+          { migrationNeeded: { basenames: missing, at: Date.now() } },
+          () => {
+            if (chrome.runtime.openOptionsPage) chrome.runtime.openOptionsPage();
+          }
+        );
+      });
+    }
+  );
+}
 
 // Load data when loading the app after browser reboot
 chrome.storage.local.get(["blocklist"], ({ blocklist: blocklistLocal }) => {
@@ -268,15 +302,15 @@ const blockRequests = function (details) {
   return { cancel: !!found };
 };
 
-// Act on store changes to save it to internal variables
-chrome.storage.onChanged.addListener(
-  ({ blocklist: storageblocklist }, areaName) => {
-    if (areaName !== "local") return;
+// Act on store changes to save it to internal variables. Fires for any key
+// in local storage; only act on `blocklist` changes.
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== "local") return;
+  if (!changes || !changes.blocklist) return;
 
-    updateListeners(storageblocklist.newValue);
-    updateDeclarativeContent();
-  }
-);
+  updateListeners(changes.blocklist.newValue);
+  updateDeclarativeContent();
+});
 
 const getUrlBase = (url) => {
   if (!url) return {};
@@ -523,28 +557,100 @@ function processScripts(scripts, basename, resolve) {
   ]);
 }
 
+// Runs detection on a tab we already have host access to, merges the results
+// into the blocklist, persists it, and refreshes the tab icon.
+const detectAndBlock = (basename, tabId) =>
+  checkForScripts(basename, tabId)
+    .then((basenames) => {
+      const newBlocklist = [...blocklist, ...basenames].reduce(
+        (list, website) => {
+          if (list.find((site) => site.basename === website.basename))
+            return list;
+          list.push(website);
+          return list;
+        },
+        []
+      );
+
+      blocklist = newBlocklist;
+      // Persist only; storage.onChanged drives updateListeners +
+      // updateDeclarativeContent. Calling them here too races against the
+      // storage event and causes DNR "unique ID" errors on rapid updates.
+      chrome.storage.local.set({ blocklist: [...newBlocklist] });
+      chrome.storage.local.remove("pendingBlock");
+
+      // Refresh the icon on the tab so it turns gray without needing a reload.
+      if (tabId) {
+        chrome.tabs.get(tabId, (tab) => {
+          if (chrome.runtime.lastError || !tab) return;
+          updateIcon(tabId, null, tab);
+        });
+      }
+
+      return basenames;
+    })
+    .catch((err) => {
+      console.error("detectAndBlock failed:", err);
+      throw err;
+    });
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === "updateBlocklist") {
+    // Legacy path (detection done in popup). Still supported as a fallback.
     const { basenames } = message;
 
-    // Update the blocklist
     const newBlocklist = [...blocklist, ...basenames].reduce(
       (list, website) => {
         if (list.find((site) => site.basename === website.basename))
           return list;
-        else list.push(website);
+        list.push(website);
         return list;
       },
       []
     );
 
     blocklist = newBlocklist;
-    // Persist only; storage.onChanged drives updateListeners +
-    // updateDeclarativeContent. Calling them here too races against the
-    // storage event and causes DNR "unique ID" errors on rapid updates.
     chrome.storage.local.set({ blocklist: [...newBlocklist] });
+    chrome.storage.local.remove("pendingBlock");
     sendResponse({ success: true });
+    return;
   }
+
+  if (message.action === "detectAndBlock") {
+    const { basename, tabId } = message;
+    detectAndBlock(basename, tabId).then(
+      () => sendResponse({ success: true }),
+      (err) => sendResponse({ success: false, error: String(err) })
+    );
+    return true; // keep channel open for async sendResponse
+  }
+});
+
+// When the user grants a host permission via Chrome's native dialog, the
+// popup that requested it has already been closed (the permission dialog
+// steals focus). Pick up the deferred work here instead.
+chrome.permissions.onAdded.addListener((permissions) => {
+  const origins = (permissions && permissions.origins) || [];
+  if (!origins.length) return;
+
+  chrome.storage.local.get(["pendingBlock"], ({ pendingBlock }) => {
+    if (!pendingBlock || !pendingBlock.basename || !pendingBlock.tabId) return;
+
+    // Drop stale pending requests (>2 minutes old).
+    if (pendingBlock.at && Date.now() - pendingBlock.at > 2 * 60 * 1000) {
+      chrome.storage.local.remove("pendingBlock");
+      return;
+    }
+
+    const expected = `*://*.${pendingBlock.basename}/*`;
+    const matches =
+      origins.includes(expected) || origins.includes("<all_urls>");
+    if (!matches) return;
+
+    detectAndBlock(pendingBlock.basename, pendingBlock.tabId).catch(
+      console.error
+    );
+  });
 });
 
 chrome.action.onClicked.addListener(function (tab) {
